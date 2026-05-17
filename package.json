@@ -1,0 +1,19 @@
+{
+  "name": "@juliandickie/descript-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Full programmatic access to the Descript API for Claude Code.",
+  "license": "MIT",
+  "bin": { "descript": "bin/descript" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.json && node --test \"dist/tests/**/*.test.js\"",
+    "clean": "rm -rf dist"
+  },
+  "engines": { "node": ">=24" },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0"
+  }
+}
