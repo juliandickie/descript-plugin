@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "descript",
+  "version": "0.1.0",
+  "description": "Full programmatic access to the Descript API. Proactively activates for: (1) importing media into Descript, (2) Underlord agent edits, (3) publishing compositions, (4) bulk video pipelines, (5) Descript job status.",
+  "author": {
+    "name": "Julian Dickie",
+    "email": "julian@instituteofdigitaldentistry.com",
+    "url": "https://github.com/juliandickie"
+  },
+  "homepage": "https://github.com/juliandickie/descript-plugin",
+  "repository": "https://github.com/juliandickie/descript-plugin",
+  "license": "MIT",
+  "keywords": ["descript", "video", "audio", "transcription", "underlord", "publishing", "automation", "cli", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "userConfig": {
+    "api_token": {
+      "type": "string",
+      "title": "Descript API Token",
+      "description": "Personal API token from Descript Settings, API tokens. Scoped to one Drive.",
+      "sensitive": true
+    },
+    "default_profile": {
+      "type": "string",
+      "title": "Default credential profile",
+      "description": "Optional named profile to select when multiple Drives are configured.",
+      "required": false
+    }
+  }
+}

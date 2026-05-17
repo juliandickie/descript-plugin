@@ -1,0 +1,28 @@
+{
+  "name": "descript",
+  "owner": {
+    "name": "Julian Dickie",
+    "url": "https://github.com/juliandickie"
+  },
+  "metadata": {
+    "description": "Standalone marketplace for the descript plugin - full programmatic access to the Descript API.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "descript",
+      "source": { "source": "url", "url": "https://github.com/juliandickie/descript-plugin.git" },
+      "description": "Full programmatic access to the Descript API - import, Underlord agent edits, publish, jobs, and bulk pipelines, via a Node CLI wrapped by skills and an optional MCP shim.",
+      "author": {
+        "name": "Julian Dickie",
+        "email": "julian@instituteofdigitaldentistry.com",
+        "url": "https://github.com/juliandickie"
+      },
+      "homepage": "https://github.com/juliandickie/descript-plugin",
+      "repository": "https://github.com/juliandickie/descript-plugin",
+      "license": "MIT",
+      "category": "creative-tools",
+      "keywords": ["descript", "video", "audio", "transcription", "underlord", "publishing", "automation"]
+    }
+  ]
+}
