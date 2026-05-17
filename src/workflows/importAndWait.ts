@@ -1,5 +1,5 @@
 import type { DescriptClient } from "../client/index.js";
-import type { ImportRequest, ImportJobStatus } from "../client/types.js";
+import type { ImportRequest } from "../client/types.js";
 import { pollJob, type PollOptions } from "./poll.js";
 
 export interface ImportOutcome {
@@ -20,7 +20,10 @@ export async function importAndWait(
   poll: PollOptions = {}
 ): Promise<ImportOutcome> {
   const submit = await client.importProjectMedia(req);
-  const final = (await pollJob((id) => client.getJob(id), submit.job_id, poll)) as ImportJobStatus;
+  const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
+  if (final.job_type !== "import/project_media") {
+    throw new Error(`Unexpected job_type "${final.job_type}" for import job ${submit.job_id}`);
+  }
   const result = final.result;
   const base = { jobId: submit.job_id, projectId: submit.project_id, projectUrl: submit.project_url };
 

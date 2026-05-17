@@ -59,3 +59,26 @@ test("publishAndWait returns the share url", async () => {
   assert.equal(out.ok, true);
   assert.equal(out.shareUrl, "https://share.descript.com/view/x");
 });
+
+test("importAndWait returns ok:false and failedMedia on partial import", async () => {
+  installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j", job_type: "import/project_media", job_state: "stopped", created_at: "t",
+        drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "partial",
+          media_status: {
+            "good.mp4": { status: "success", duration_seconds: 10 },
+            "bad.mp4":  { status: "failed", error_message: "unsupported codec" }
+          },
+          media_seconds_used: 10,
+          created_compositions: [{ id: "c1", name: "Cut" }] } } }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const out = await importAndWait(client, { project_name: "P", add_media: { "good.mp4": { url: "u1" }, "bad.mp4": { url: "u2" } } }, { intervalMs: 1, sleep: noSleep });
+  assert.equal(out.ok, false);
+  assert.equal(out.status, "partial");
+  assert.equal(out.failedMedia.length, 1);
+  assert.equal(out.failedMedia[0]!.ref, "bad.mp4");
+  assert.match(out.failedMedia[0]!.error, /unsupported codec/);
+  assert.equal(out.createdCompositions.length, 1);
+});

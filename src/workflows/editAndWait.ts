@@ -1,5 +1,5 @@
 import type { DescriptClient } from "../client/index.js";
-import type { AgentRequest, AgentJobStatus } from "../client/types.js";
+import type { AgentRequest } from "../client/types.js";
 import { pollJob, type PollOptions } from "./poll.js";
 
 export interface EditOutcome {
@@ -20,7 +20,10 @@ export async function editAndWait(
   poll: PollOptions = {}
 ): Promise<EditOutcome> {
   const submit = await client.agentEditJob(req);
-  const final = (await pollJob((id) => client.getJob(id), submit.job_id, poll)) as AgentJobStatus;
+  const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
+  if (final.job_type !== "agent") {
+    throw new Error(`Unexpected job_type "${final.job_type}" for agent job ${submit.job_id}`);
+  }
   const result = final.result;
   const base = { jobId: submit.job_id, projectId: submit.project_id, projectUrl: submit.project_url };
 
