@@ -35,6 +35,11 @@ export function parseManifest(raw: unknown): BatchManifest {
     if (!hasUrl && !hasFile) {
       throw new Error(`Manifest item ${idx} \`source\` must be {url} or {file, content_type}.`);
     }
+    if (!hasUrl) {
+      throw new Error(
+        `Manifest item ${idx} uses a local file source; the batch runner is URL-only. Use \`descript import\` for local file uploads.`
+      );
+    }
     return {
       name: typeof i.name === "string" ? i.name : `item-${idx}`,
       source: i.source as BatchItem["source"],
@@ -150,16 +155,17 @@ export async function runBatch(client: DescriptClient, m: BatchManifest, opts: R
   if (!opts.confirm) {
     throw new Error("Batch execution requires explicit confirmation. Run the plan first, then re-run with confirm.");
   }
-  const queue = [...m.items];
-  const results: BatchItemReport[] = [];
+  const queue: Array<[number, BatchItem]> = m.items.map((item, idx) => [idx, item]);
+  const results = new Array<BatchItemReport>(m.items.length);
   const workers = Array.from({ length: Math.min(m.concurrency, queue.length) }, async () => {
     for (;;) {
-      const item = queue.shift();
-      if (!item) return;
-      results.push(await runItem(client, item, m, opts));
+      const entry = queue.shift();
+      if (!entry) return;
+      const [idx, item] = entry;
+      results[idx] = await runItem(client, item, m, opts);
     }
   });
   await Promise.all(workers);
   const succeeded = results.filter((r) => r.status === "success").length;
-  return { total: m.items.length, succeeded, failed: results.length - succeeded, items: results };
+  return { total: m.items.length, succeeded, failed: m.items.length - succeeded, items: results };
 }
