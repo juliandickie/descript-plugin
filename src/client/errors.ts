@@ -54,7 +54,7 @@ export class DescriptApiError extends Error {
 
   constructor(status: number, body?: ApiErrorBody, meta: ErrorMeta = {}) {
     const category = categoryForStatus(status);
-    const summary = body?.message ?? body?.error ?? `HTTP ${status}`;
+    const summary = body?.message || body?.error || `HTTP ${status}`;
     super(`Descript API error ${status} (${category}): ${summary}`);
     this.name = "DescriptApiError";
     this.status = status;

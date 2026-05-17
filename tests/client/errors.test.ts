@@ -21,6 +21,7 @@ test("DescriptApiError carries status, category, body and hint", () => {
   assert.equal(e.body?.message, "bad token");
   assert.match(e.hint, /descript-setup|token/i);
   assert.ok(e instanceof Error);
+  assert.ok(e instanceof DescriptApiError);
 });
 
 test("rate limit metadata is attached", () => {
@@ -29,4 +30,5 @@ test("rate limit metadata is attached", () => {
   });
   assert.equal(e.retryAfterSeconds, 7);
   assert.equal(e.rateLimitRemaining, 0);
+  assert.equal(e.rateLimitConsumed, 100);
 });
