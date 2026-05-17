@@ -43,3 +43,7 @@ test("tools/call surfaces a nonzero CLI exit as isError", async () => {
     assert.equal(r.result.isError, true);
     assert.match(r.result.content[0].text, /bad token/);
 });
+test("tools/call with non-object arguments returns JSON-RPC -32602", async () => {
+    const r = await handleRpc({ jsonrpc: "2.0", id: 12, method: "tools/call", params: { name: "descript_status", arguments: "not-an-object" } }, async () => ({ code: 0, stdout: "", stderr: "" }));
+    assert.equal(r.error.code, -32602);
+});

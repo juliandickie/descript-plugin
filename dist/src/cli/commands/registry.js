@@ -19,6 +19,31 @@ function client(ctx) {
     return new DescriptClient({ token: creds.token });
 }
 const noWait = (ctx) => ctx.flags["no-wait"] === true;
+const TEAM_ACCESS = ["edit", "comment", "view", "none"];
+const MEDIA_TYPE = ["Video", "Audio"];
+const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"];
+const ACCESS_LEVEL = ["public", "unlisted", "drive", "private"];
+// Returns true (and emits a usage error) if the flag is present but not an allowed value.
+function badEnum(ctx, flag, allowed) {
+    const v = ctx.flags[flag];
+    if (v === undefined)
+        return false;
+    if (typeof v === "string" && allowed.includes(v))
+        return false;
+    fail(ctx.io, `--${flag} must be one of: ${allowed.join(", ")}`);
+    return true;
+}
+// Reads + JSON-parses a file, emitting a clear usage error on any failure.
+// Returns undefined on failure (JSON.parse never returns undefined on success).
+function readJsonFile(ctx, path) {
+    try {
+        return JSON.parse(readFileSync(path, "utf8"));
+    }
+    catch (e) {
+        fail(ctx.io, `Could not read JSON from "${path}": ${e instanceof Error ? e.message : String(e)}`);
+        return undefined;
+    }
+}
 export const COMMANDS = {
     async status(ctx) {
         const r = await client(ctx).getStatus();
@@ -36,8 +61,10 @@ export const COMMANDS = {
     },
     async import(ctx) {
         const c = client(ctx);
-        const name = String(ctx.flags.name ?? "API Import");
+        const name = typeof ctx.flags.name === "string" ? ctx.flags.name : "API Import";
         const callbackUrl = typeof ctx.flags["callback-url"] === "string" ? ctx.flags["callback-url"] : undefined;
+        if (badEnum(ctx, "team-access", TEAM_ACCESS))
+            return 2;
         const teamAccess = typeof ctx.flags["team-access"] === "string" ? ctx.flags["team-access"] : undefined;
         const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}) };
         const mediaJson = typeof ctx.flags.media === "string" ? ctx.flags.media : undefined;
@@ -80,7 +107,7 @@ export const COMMANDS = {
             const submit = await directUpload(c, {
                 mediaRef: "upload.media",
                 filePath: file,
-                contentType: String(ctx.flags["content-type"] ?? "video/mp4"),
+                contentType: typeof ctx.flags["content-type"] === "string" ? ctx.flags["content-type"] : "video/mp4",
                 request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: "upload.media" }] }], ...extra }
             });
             if (noWait(ctx)) {
@@ -104,11 +131,13 @@ export const COMMANDS = {
     },
     async agent(ctx) {
         const c = client(ctx);
-        const prompt = String(ctx.flags.prompt ?? "");
+        const prompt = typeof ctx.flags.prompt === "string" ? ctx.flags.prompt : "";
         if (!prompt) {
-            fail(ctx.io, "Provide --prompt");
+            fail(ctx.io, "Provide --prompt <text> (a non-empty value is required)");
             return 2;
         }
+        if (badEnum(ctx, "team-access", TEAM_ACCESS))
+            return 2;
         const req = {
             project_id: typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined,
             project_name: typeof ctx.flags["project-name"] === "string" ? ctx.flags["project-name"] : undefined,
@@ -135,6 +164,12 @@ export const COMMANDS = {
             fail(ctx.io, "Provide --project-id");
             return 2;
         }
+        if (badEnum(ctx, "media-type", MEDIA_TYPE))
+            return 2;
+        if (badEnum(ctx, "resolution", RESOLUTION))
+            return 2;
+        if (badEnum(ctx, "access-level", ACCESS_LEVEL))
+            return 2;
         const req = {
             project_id: projectId,
             composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
@@ -191,7 +226,12 @@ export const COMMANDS = {
     },
     async published(ctx) {
         const c = client(ctx);
-        const r = await c.getPublishedProjectMetadata(String(ctx.args[1] ?? ctx.args[0]));
+        const slug = ctx.args[1] ?? ctx.args[0];
+        if (!slug) {
+            fail(ctx.io, "Usage: descript published <slug>");
+            return 2;
+        }
+        const r = await c.getPublishedProjectMetadata(slug);
         emit(ctx.io, `Published ${r.publish_type} (${r.privacy})`, r);
         return 0;
     },
@@ -202,7 +242,9 @@ export const COMMANDS = {
             fail(ctx.io, "Provide --schema <path to JSON body>");
             return 2;
         }
-        const body = JSON.parse(readFileSync(schemaPath, "utf8"));
+        const body = readJsonFile(ctx, schemaPath);
+        if (body === undefined)
+            return 2;
         const r = await c.postEditInDescriptSchema(body);
         emit(ctx.io, `Import URL: ${r.url}`, r);
         return 0;
@@ -215,7 +257,17 @@ export const COMMANDS = {
             fail(ctx.io, "Usage: descript batch plan|run <manifest.json> [--confirm]");
             return 2;
         }
-        const manifest = parseManifest(JSON.parse(readFileSync(file, "utf8")));
+        const raw = readJsonFile(ctx, file);
+        if (raw === undefined)
+            return 2;
+        let manifest;
+        try {
+            manifest = parseManifest(raw);
+        }
+        catch (e) {
+            fail(ctx.io, e instanceof Error ? e.message : String(e));
+            return 2;
+        }
         if (sub === "plan") {
             const plan = planBatch(manifest);
             emit(ctx.io, [plan.summary, ...plan.lines].join("\n"), plan);

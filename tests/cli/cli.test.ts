@@ -1,6 +1,6 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { runCli } from "../../src/cli/index.js";
+import { runCli, parseArgv } from "../../src/cli/index.js";
 import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -130,4 +130,48 @@ test("import --media with invalid JSON exits 2 without calling the API", async (
   assert.equal(code, 2);
   assert.equal(calls.length, 0);
   assert.match(out.join(""), /must be valid JSON/);
+});
+
+test("publish rejects an invalid --resolution locally without calling the API", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: {} }]);
+  const out: string[] = [];
+  const code = await runCli(["publish", "--project-id", "p", "--resolution", "9000p", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(out.join(""), /resolution must be one of/);
+});
+
+test("agent rejects a valueless --prompt without spending credits", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: {} }]);
+  const out: string[] = [];
+  // --prompt with no value parses to boolean true; must NOT submit a job with prompt "true"
+  const code = await runCli(["agent", "--project-id", "p", "--prompt", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+});
+
+test("batch with a nonexistent manifest exits 2 (usage), not 1", async () => {
+  const out: string[] = [];
+  const code = await runCli(["batch", "plan", "/no/such/manifest-xyz.json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 2);
+  assert.match(out.join(""), /Could not read JSON/);
+});
+
+test("published without a slug exits 2 without calling the API", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: {} }]);
+  const out: string[] = [];
+  const code = await runCli(["published"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+});
+
+test("parseArgv supports --key=value including values starting with --", () => {
+  const r = parseArgv(["agent", "--prompt=--keep this literal", "--json"]);
+  assert.equal(r.command, "agent");
+  assert.equal(r.flags.prompt, "--keep this literal");
+  assert.equal(r.flags.json, true);
 });

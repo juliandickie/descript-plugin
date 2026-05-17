@@ -20,6 +20,9 @@ export interface BatchManifest {
 }
 
 export function parseManifest(raw: unknown): BatchManifest {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Batch manifest must be a JSON object with an `items` array.");
+  }
   const obj = raw as Record<string, unknown>;
   if (!Array.isArray(obj.items) || obj.items.length === 0) {
     throw new Error("Batch manifest must have a non-empty `items` array.");

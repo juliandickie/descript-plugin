@@ -38,14 +38,21 @@ export async function directUpload(
   }
 
   const stream = createReadStream(params.filePath);
-  const resp = await fetch(entry.upload_url, {
-    method: "PUT",
-    headers: { "content-type": "application/octet-stream", "content-length": String(size) },
-    body: Readable.toWeb(stream) as ReadableStream,
-    duplex: "half"
-  } as RequestInit & { duplex: "half" });
+  let resp: Response;
+  try {
+    resp = await fetch(entry.upload_url, {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream", "content-length": String(size) },
+      body: Readable.toWeb(stream) as ReadableStream,
+      duplex: "half"
+    } as RequestInit & { duplex: "half" });
+  } catch (e) {
+    stream.destroy();
+    throw e;
+  }
 
   if (!resp.ok) {
+    stream.destroy();
     throw new Error(`Signed upload PUT failed with HTTP ${resp.status} for "${params.mediaRef}".`);
   }
   return submit;

@@ -2,6 +2,9 @@ import { importAndWait } from "./importAndWait.js";
 import { editAndWait } from "./editAndWait.js";
 import { publishAndWait } from "./publishAndWait.js";
 export function parseManifest(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error("Batch manifest must be a JSON object with an `items` array.");
+    }
     const obj = raw;
     if (!Array.isArray(obj.items) || obj.items.length === 0) {
         throw new Error("Batch manifest must have a non-empty `items` array.");

@@ -54,7 +54,11 @@ export async function handleRpc(req, exec) {
         if (typeof name !== "string" || name.length === 0) {
             return { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Invalid params: missing tool name" } };
         }
-        const args = (req.params?.arguments ?? {});
+        const rawArgs = req.params?.arguments ?? {};
+        if (typeof rawArgs !== "object" || rawArgs === null || Array.isArray(rawArgs)) {
+            return { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Invalid params: arguments must be an object" } };
+        }
+        const args = rawArgs;
         const tool = TOOLS.find((t) => t.name === name);
         if (!tool) {
             return { jsonrpc: "2.0", id: req.id, result: { isError: true, content: [{ type: "text", text: `Unknown tool ${name}` }] } };

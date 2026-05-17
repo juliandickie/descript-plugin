@@ -27,14 +27,20 @@ export function parseArgv(argv) {
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a.startsWith("--")) {
-            const key = a.slice(2);
-            const next = argv[i + 1];
-            if (next !== undefined && !next.startsWith("--")) {
-                flags[key] = next;
-                i++;
+            const body = a.slice(2);
+            const eq = body.indexOf("=");
+            if (eq >= 0) {
+                flags[body.slice(0, eq)] = body.slice(eq + 1);
             }
-            else
-                flags[key] = true;
+            else {
+                const next = argv[i + 1];
+                if (next !== undefined && !next.startsWith("--")) {
+                    flags[body] = next;
+                    i++;
+                }
+                else
+                    flags[body] = true;
+            }
         }
         else
             positionals.push(a);

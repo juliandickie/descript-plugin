@@ -24,8 +24,7 @@
     "default_profile": {
       "type": "string",
       "title": "Default credential profile",
-      "description": "Optional named profile to select when multiple Drives are configured.",
-      "required": false
+      "description": "Optional named profile to select when multiple Drives are configured."
     }
   }
 }
