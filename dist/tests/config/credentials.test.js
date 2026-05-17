@@ -59,3 +59,15 @@ test("missing named profile falls through to plugin env, never another profile",
     assert.equal(c.source, "plugin");
     rmSync(path, { force: true });
 });
+test("plugin default_profile env selects the profile, but flag and DESCRIPT_PROFILE still win", () => {
+    const path = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
+    // plugin-config default selects the profile when nothing higher-precedence is set
+    const c = resolveCredentials({ env: { CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path });
+    assert.equal(c.token, "PROMO");
+    assert.equal(c.profile, "promo");
+    // explicit --profile flag wins over the plugin default
+    assert.equal(resolveCredentials({ profile: "idd", env: { CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path }).token, "IDD");
+    // DESCRIPT_PROFILE shell env wins over the plugin default
+    assert.equal(resolveCredentials({ env: { DESCRIPT_PROFILE: "idd", CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path }).token, "IDD");
+    rmSync(path, { force: true });
+});

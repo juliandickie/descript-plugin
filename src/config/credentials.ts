@@ -35,7 +35,7 @@ function readConfig(path: string): ConfigFile | undefined {
 
 export function resolveCredentials(opts: ResolveOptions = {}): ResolvedCredentials {
   const env = opts.env ?? process.env;
-  const profile = opts.profile ?? env.DESCRIPT_PROFILE;
+  const profile = opts.profile ?? env.DESCRIPT_PROFILE ?? env.CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE;
 
   if (opts.flagToken) {
     return { token: opts.flagToken, profile: profile ?? "default", source: "flag" };
