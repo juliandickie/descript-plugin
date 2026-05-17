@@ -37,10 +37,43 @@ export const COMMANDS = {
     async import(ctx) {
         const c = client(ctx);
         const name = String(ctx.flags.name ?? "API Import");
+        const callbackUrl = typeof ctx.flags["callback-url"] === "string" ? ctx.flags["callback-url"] : undefined;
+        const teamAccess = typeof ctx.flags["team-access"] === "string" ? ctx.flags["team-access"] : undefined;
+        const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}) };
+        const mediaJson = typeof ctx.flags.media === "string" ? ctx.flags.media : undefined;
         const file = typeof ctx.flags.file === "string" ? ctx.flags.file : undefined;
         const url = typeof ctx.flags.url === "string" ? ctx.flags.url : undefined;
+        if (mediaJson) {
+            let addMedia;
+            try {
+                addMedia = JSON.parse(mediaJson);
+            }
+            catch {
+                fail(ctx.io, "--media must be valid JSON (an add_media map)");
+                return 2;
+            }
+            let addCompositions;
+            if (typeof ctx.flags.compositions === "string") {
+                try {
+                    addCompositions = JSON.parse(ctx.flags.compositions);
+                }
+                catch {
+                    fail(ctx.io, "--compositions must be valid JSON (an array)");
+                    return 2;
+                }
+            }
+            const req = { project_name: name, add_media: addMedia, ...(addCompositions ? { add_compositions: addCompositions } : {}), ...extra };
+            if (noWait(ctx)) {
+                const s = await c.importProjectMedia(req);
+                emit(ctx.io, `Submitted ${s.job_id}`, s);
+                return 0;
+            }
+            const out = await importAndWait(c, req);
+            emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
+            return out.ok ? 0 : 4;
+        }
         if (!file && !url) {
-            fail(ctx.io, "Provide --url or --file");
+            fail(ctx.io, "Provide --url, --file, or --media <json>");
             return 2;
         }
         if (file) {
@@ -48,7 +81,7 @@ export const COMMANDS = {
                 mediaRef: "upload.media",
                 filePath: file,
                 contentType: String(ctx.flags["content-type"] ?? "video/mp4"),
-                request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: "upload.media" }] }] }
+                request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: "upload.media" }] }], ...extra }
             });
             if (noWait(ctx)) {
                 emit(ctx.io, `Submitted import job ${submit.job_id}`, submit);
@@ -59,7 +92,7 @@ export const COMMANDS = {
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
         }
-        const req = { project_name: name, add_media: { "media.0": { url: url } }, add_compositions: [{ name, clips: [{ media: "media.0" }] }] };
+        const req = { project_name: name, add_media: { "media.0": { url: url } }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra };
         if (noWait(ctx)) {
             const s = await c.importProjectMedia(req);
             emit(ctx.io, `Submitted ${s.job_id}`, s);
@@ -81,7 +114,9 @@ export const COMMANDS = {
             project_name: typeof ctx.flags["project-name"] === "string" ? ctx.flags["project-name"] : undefined,
             composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
             model: typeof ctx.flags.model === "string" ? ctx.flags.model : undefined,
-            prompt
+            prompt,
+            ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {}),
+            ...(typeof ctx.flags["team-access"] === "string" ? { team_access: ctx.flags["team-access"] } : {})
         };
         if (noWait(ctx)) {
             const s = await c.agentEditJob(req);
@@ -105,7 +140,8 @@ export const COMMANDS = {
             composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
             media_type: ctx.flags["media-type"] || undefined,
             resolution: ctx.flags.resolution || undefined,
-            access_level: ctx.flags["access-level"] || undefined
+            access_level: ctx.flags["access-level"] || undefined,
+            ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {})
         };
         if (noWait(ctx)) {
             const s = await c.publishJob(req);

@@ -5,7 +5,7 @@ const USAGE = `Usage: descript <command> [options]
 Commands:
   status                         Check API auth and service status
   config set|list                Manage API token profiles
-  import --url|--file [...]      Import media, create a project
+  import --url|--file|--media    Import media, create a project (--media <json> add_media, --compositions <json>)
   agent --prompt [...]           Run an Underlord agent edit
   publish --project-id [...]     Publish a composition
   jobs list|get <id>|cancel <id> Inspect or cancel jobs
@@ -17,8 +17,10 @@ Commands:
 Global options:
   --json            Machine-readable output
   --no-wait         Submit without polling to completion
+  --callback-url <u> Webhook for async completion (import/agent/publish)
   --token <t>       Explicit API token
-  --profile <name>  Credential profile to use`;
+  --profile <name>  Credential profile to use
+  --team-access <l>  Drive access for new projects (edit|comment|view|none)`;
 export function parseArgv(argv) {
     const flags = {};
     const positionals = [];

@@ -16,5 +16,6 @@ Run a one-shot Underlord agent edit.
 2. This SPENDS AI credits and media seconds. Before submitting, state the project and prompt and get explicit user confirmation.
 3. Run: `descript agent --project-id <ID> --prompt "<one-shot instruction>" --json`. The agent command also accepts --composition-id (target a specific composition), --model, and --project-name (create a new project from the prompt instead of editing an existing one - use this instead of --project-id when there is no project yet).
    Add --no-wait to submit without polling (headless).
+   For headless pipelines, add --callback-url <https url> (Descript POSTs completion) and --team-access for new projects created via --project-name.
 4. Report agentResponse, aiCreditsUsed, and mediaSecondsUsed from the result so cost is visible.
 5. On failure, surface the error and do not silently retry (a retry re-spends credits).

@@ -6,11 +6,11 @@ import { join } from "node:path";
 import { resolveCredentials } from "../../src/config/credentials.js";
 import { DescriptClient } from "../../src/client/index.js";
 
-function tmpConfig(contents: object): string {
+function tmpConfig(contents: object): { path: string; dir: string } {
   const dir = mkdtempSync(join(tmpdir(), "descript-cfg-"));
   const path = join(dir, "credentials.json");
   writeFileSync(path, JSON.stringify(contents));
-  return path;
+  return { path, dir };
 }
 
 test("flag token wins over everything", () => {
@@ -20,18 +20,18 @@ test("flag token wins over everything", () => {
 });
 
 test("env var wins over config file", () => {
-  const path = tmpConfig({ profiles: { default: { api_token: "FILE" } } });
+  const { path, dir } = tmpConfig({ profiles: { default: { api_token: "FILE" } } });
   const c = resolveCredentials({ env: { DESCRIPT_API_TOKEN: "ENV" }, configPath: path });
   assert.equal(c.token, "ENV");
-  rmSync(path, { force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("config file profile is used and profile selectable", () => {
-  const path = tmpConfig({ default_profile: "idd", profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
+  const { path, dir } = tmpConfig({ default_profile: "idd", profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
   assert.equal(resolveCredentials({ env: {}, configPath: path }).token, "IDD");
   assert.equal(resolveCredentials({ env: {}, configPath: path, profile: "promo" }).token, "PROMO");
   assert.equal(resolveCredentials({ env: { DESCRIPT_PROFILE: "promo" }, configPath: path }).token, "PROMO");
-  rmSync(path, { force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("plugin userConfig env var is the final fallback", () => {
@@ -52,16 +52,16 @@ test("DescriptClient exposes every endpoint group", () => {
 });
 
 test("missing named profile falls through to throw when no other source", () => {
-  const path = tmpConfig({ profiles: { default: { api_token: "FILE" } } });
+  const { path, dir } = tmpConfig({ profiles: { default: { api_token: "FILE" } } });
   assert.throws(
     () => resolveCredentials({ profile: "nonexistent", env: {}, configPath: path }),
     /No Descript API token/
   );
-  rmSync(path, { force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("missing named profile falls through to plugin env, never another profile", () => {
-  const path = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
+  const { path, dir } = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
   const c = resolveCredentials({
     profile: "idd-typo",
     env: { CLAUDE_PLUGIN_OPTION_API_TOKEN: "PLUGIN" },
@@ -69,11 +69,11 @@ test("missing named profile falls through to plugin env, never another profile",
   });
   assert.equal(c.token, "PLUGIN");
   assert.equal(c.source, "plugin");
-  rmSync(path, { force: true });
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("plugin default_profile env selects the profile, but flag and DESCRIPT_PROFILE still win", () => {
-  const path = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
+  const { path, dir } = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
   // plugin-config default selects the profile when nothing higher-precedence is set
   const c = resolveCredentials({ env: { CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path });
   assert.equal(c.token, "PROMO");
@@ -82,5 +82,5 @@ test("plugin default_profile env selects the profile, but flag and DESCRIPT_PROF
   assert.equal(resolveCredentials({ profile: "idd", env: { CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path }).token, "IDD");
   // DESCRIPT_PROFILE shell env wins over the plugin default
   assert.equal(resolveCredentials({ env: { DESCRIPT_PROFILE: "idd", CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path }).token, "IDD");
-  rmSync(path, { force: true });
+  rmSync(dir, { recursive: true, force: true });
 });

@@ -15,6 +15,8 @@ Import media by public URL or local file and create a Descript project.
 ## Instructions
 - URL import: `descript import --url "<https url>" --name "Project Name" --json`
 - Local file: `descript import --file "/path/clip.mp4" --content-type video/mp4 --name "Project Name" --json`
+- Any shape (multitrack, mixed, multi-file): `descript import --media '<add_media JSON>' --compositions '<JSON array>' --name "Project" --json`. This reaches the full Descript import surface, including multitrack sequences ({"Seq":{"tracks":[{"media":"a"},{"media":"b","offset":5}]}}).
+- Async/headless: add `--callback-url <https url>` so Descript POSTs job completion to your webhook, and `--team-access edit|comment|view|none` for new-project Drive access.
 - Add `--no-wait` to submit without polling (headless). Otherwise the command polls to completion and prints the project URL.
 - Report the projectUrl and any failedMedia entries to the user.
 

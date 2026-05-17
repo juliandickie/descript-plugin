@@ -82,3 +82,31 @@ test("import --file --no-wait emits the submit job without polling or re-submitt
     assert.match(out.join(""), /"job_id": ?"j"/);
     rmSync(dir, { recursive: true, force: true });
 });
+test("import --url passes --callback-url and --team-access into the request body", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const out = [];
+    const code = await runCli(["import", "--url", "https://x/a.mp4", "--name", "P", "--callback-url", "https://hook.example/cb", "--team-access", "edit", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.callback_url, "https://hook.example/cb");
+    assert.equal(body.team_access, "edit");
+});
+test("import --media accepts a raw add_media map including a multitrack sequence", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const media = JSON.stringify({ "cam1.mp4": { url: "https://x/1.mp4" }, "cam2.mp4": { url: "https://x/2.mp4" }, "Multicam": { tracks: [{ media: "cam1.mp4" }, { media: "cam2.mp4", offset: 5 }] } });
+    const out = [];
+    const code = await runCli(["import", "--media", media, "--name", "Multi", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 1);
+    const body = JSON.parse(calls[0].body);
+    assert.ok(body.add_media["Multicam"].tracks);
+    assert.equal(body.add_media["Multicam"].tracks[1].offset, 5);
+});
+test("import --media with invalid JSON exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: {} }]);
+    const out = [];
+    const code = await runCli(["import", "--media", "{not json", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /must be valid JSON/);
+});

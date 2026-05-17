@@ -25,4 +25,4 @@ A job is done when job_state is stopped. Then result.status is success (or parti
 Bearer token, Drive-scoped. Resolution order: --token, DESCRIPT_API_TOKEN, config file profile, plugin api_token.
 
 ## CLI map
-descript status, config, import, agent, publish, jobs, projects, published, edit-in-descript, batch. Add --json for machine output, --no-wait to skip polling, --profile to select a Drive.
+descript status, config, import, agent, publish, jobs, projects, published, edit-in-descript, batch. Add --json for machine output, --no-wait to skip polling, --profile to select a Drive. import also accepts --media/--compositions (raw JSON for any import shape incl. multitrack) and --callback-url/--team-access; agent and publish accept --callback-url; agent also --team-access.
