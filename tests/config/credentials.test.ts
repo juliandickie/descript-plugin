@@ -50,3 +50,24 @@ test("DescriptClient exposes every endpoint group", () => {
     assert.equal(typeof (c as unknown as Record<string, unknown>)[m], "function", `missing ${m}`);
   }
 });
+
+test("missing named profile falls through to throw when no other source", () => {
+  const path = tmpConfig({ profiles: { default: { api_token: "FILE" } } });
+  assert.throws(
+    () => resolveCredentials({ profile: "nonexistent", env: {}, configPath: path }),
+    /No Descript API token/
+  );
+  rmSync(path, { force: true });
+});
+
+test("missing named profile falls through to plugin env, never another profile", () => {
+  const path = tmpConfig({ profiles: { idd: { api_token: "IDD" }, promo: { api_token: "PROMO" } } });
+  const c = resolveCredentials({
+    profile: "idd-typo",
+    env: { CLAUDE_PLUGIN_OPTION_API_TOKEN: "PLUGIN" },
+    configPath: path
+  });
+  assert.equal(c.token, "PLUGIN");
+  assert.equal(c.source, "plugin");
+  rmSync(path, { force: true });
+});

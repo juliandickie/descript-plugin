@@ -8,6 +8,7 @@ export interface ResolveOptions {
   env?: Record<string, string | undefined>;
   configPath?: string;
 }
+/** @remarks `token` is a plaintext secret. Never log or JSON.stringify this object. */
 export interface ResolvedCredentials {
   token: string;
   profile: string;
@@ -34,7 +35,7 @@ function readConfig(path: string): ConfigFile | undefined {
 
 export function resolveCredentials(opts: ResolveOptions = {}): ResolvedCredentials {
   const env = opts.env ?? process.env;
-  const profile = opts.profile ?? env.DESCRIPT_PROFILE ?? undefined;
+  const profile = opts.profile ?? env.DESCRIPT_PROFILE;
 
   if (opts.flagToken) {
     return { token: opts.flagToken, profile: profile ?? "default", source: "flag" };
@@ -62,6 +63,6 @@ export function resolveCredentials(opts: ResolveOptions = {}): ResolvedCredentia
 }
 
 export function redactToken(token: string): string {
-  if (token.length <= 6) return "***";
-  return `${token.slice(0, 3)}***${token.slice(-2)}`;
+  if (token.length <= 4) return "***";
+  return `***${token.slice(-4)}`;
 }
