@@ -18,6 +18,6 @@ Configure the Descript API token and verify it.
 2. Save it: `descript config set --token <TOKEN> --profile <name>`
 3. Verify: `descript status --json` should report `{"status":"ok"}`.
 4. List profiles: `descript config list`.
-5. For headless use, the same token works as `DESCRIPT_API_TOKEN`, or via the plugin api_token config.
+5. For headless use, the same token works as `DESCRIPT_API_TOKEN`, or via the plugin api_token config (exported to the CLI as `CLAUDE_PLUGIN_OPTION_API_TOKEN`). Use `--profile <name>` or `DESCRIPT_PROFILE` to select a Drive.
 
 The token is sensitive. Never echo it back to the user or write it to files other than the credentials store.

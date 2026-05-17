@@ -10,6 +10,8 @@ Operator-triggered. Bulk operations spend significant AI credits and media secon
 
 ## Instructions
 1. Build a JSON manifest: { "concurrency": 2, "items": [ { "name": "...", "source": {"url": "..."}, "project_name": "...", "agent_prompt": "...", "publish": {"media_type":"Video","resolution":"1080p"} } ] }
+   Batch is URL-only. For local files, use the descript-import skill for each item instead (the batch runner rejects file sources at plan time).
 2. ALWAYS plan first: `descript batch plan manifest.json --json`. Present the full plan and estimated spend to the user. Do not summarize it.
 3. Only after explicit user approval: `descript batch run manifest.json --confirm --json`
 4. Report per-item outcomes including failures. Never report partial success as success.
+5. While a long batch runs, use the descript-jobs skill to monitor progress or cancel a runaway job.

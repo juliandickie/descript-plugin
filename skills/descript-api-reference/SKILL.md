@@ -10,7 +10,7 @@ Background knowledge for building correct Descript requests.
 
 ## Endpoints (all via the `descript` CLI)
 - import: POST /jobs/import/project_media - async, returns job_id; URL, direct-upload, or multitrack media
-- agent: POST /jobs/agent - async; one-shot prompt; spends AI credits
+- agent: POST /jobs/agent - async; one-shot prompt; spends AI credits. CLI flags: --project-id OR --project-name (new project from prompt), optional --composition-id, --model.
 - publish: POST /jobs/publish - async; Video or Audio, resolution, access_level
 - jobs: GET /jobs, GET /jobs/{id}, DELETE /jobs/{id} - state is queued, running, stopped, cancelled
 - projects: GET /projects, GET /projects/{id}
