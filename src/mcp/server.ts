@@ -43,7 +43,7 @@ export const realExecutor: Executor = async (argv) => {
 };
 
 export interface RpcRequest { jsonrpc: "2.0"; id?: number | string; method: string; params?: Record<string, unknown>; }
-export interface RpcResponse { jsonrpc: "2.0"; id: number | string; result: any; }
+export interface RpcResponse { jsonrpc: "2.0"; id: number | string | null; result?: any; error?: { code: number; message: string }; }
 
 export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcResponse | null> {
   if (req.id === undefined) return null; // notification
@@ -63,7 +63,10 @@ export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcRes
     } };
   }
   if (req.method === "tools/call") {
-    const name = String(req.params?.name);
+    const name = req.params?.name;
+    if (typeof name !== "string" || name.length === 0) {
+      return { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Invalid params: missing tool name" } };
+    }
     const args = (req.params?.arguments ?? {}) as Record<string, unknown>;
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) {
@@ -75,7 +78,18 @@ export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcRes
       content: [{ type: "text", text: r.stdout || r.stderr }]
     } };
   }
-  return { jsonrpc: "2.0", id: req.id, result: {} };
+  return { jsonrpc: "2.0", id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } };
+}
+
+export async function handleLine(line: string, exec: Executor): Promise<string | null> {
+  let req: RpcRequest;
+  try {
+    req = JSON.parse(line) as RpcRequest;
+  } catch {
+    return JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+  }
+  const resp = await handleRpc(req, exec);
+  return resp ? JSON.stringify(resp) : null;
 }
 
 async function main(): Promise<void> {
@@ -88,9 +102,8 @@ async function main(): Promise<void> {
       const line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
-      const req = JSON.parse(line) as RpcRequest;
-      const resp = await handleRpc(req, realExecutor);
-      if (resp) process.stdout.write(JSON.stringify(resp) + "\n");
+      const out = await handleLine(line, realExecutor);
+      if (out) process.stdout.write(out + "\n");
     }
   }
 }

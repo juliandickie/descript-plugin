@@ -50,7 +50,10 @@ export async function handleRpc(req, exec) {
             } };
     }
     if (req.method === "tools/call") {
-        const name = String(req.params?.name);
+        const name = req.params?.name;
+        if (typeof name !== "string" || name.length === 0) {
+            return { jsonrpc: "2.0", id: req.id, error: { code: -32602, message: "Invalid params: missing tool name" } };
+        }
         const args = (req.params?.arguments ?? {});
         const tool = TOOLS.find((t) => t.name === name);
         if (!tool) {
@@ -62,7 +65,18 @@ export async function handleRpc(req, exec) {
                 content: [{ type: "text", text: r.stdout || r.stderr }]
             } };
     }
-    return { jsonrpc: "2.0", id: req.id, result: {} };
+    return { jsonrpc: "2.0", id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } };
+}
+export async function handleLine(line, exec) {
+    let req;
+    try {
+        req = JSON.parse(line);
+    }
+    catch {
+        return JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
+    }
+    const resp = await handleRpc(req, exec);
+    return resp ? JSON.stringify(resp) : null;
 }
 async function main() {
     let buffer = "";
@@ -75,10 +89,9 @@ async function main() {
             buffer = buffer.slice(nl + 1);
             if (!line)
                 continue;
-            const req = JSON.parse(line);
-            const resp = await handleRpc(req, realExecutor);
-            if (resp)
-                process.stdout.write(JSON.stringify(resp) + "\n");
+            const out = await handleLine(line, realExecutor);
+            if (out)
+                process.stdout.write(out + "\n");
         }
     }
 }
