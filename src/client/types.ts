@@ -147,6 +147,7 @@ export interface ListJobsResponse {
 }
 export interface ListJobsQuery {
   project_id?: string;
+  /** API-defined filter: the GET /jobs endpoint does not accept "publish" (unlike JobType). See docs/descript-openapi.json. */
   type?: "import/project_media" | "agent";
   cursor?: string;
   limit?: number;
