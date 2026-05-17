@@ -36,9 +36,9 @@ export class HttpClient {
       if (v !== undefined) url.searchParams.set(k, String(v));
     }
     const headers: Record<string, string> = {
+      ...(opts.headers ?? {}),
       authorization: `Bearer ${this.token}`,
-      accept: "application/json",
-      ...(opts.headers ?? {})
+      accept: "application/json"
     };
     let init: RequestInit = { method, headers };
     if (opts.body !== undefined) {
