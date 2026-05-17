@@ -1,8 +1,9 @@
 import { DescriptClient } from "../../client/index.js";
 import { DescriptApiError } from "../../client/errors.js";
 import { resolveCredentials } from "../../config/credentials.js";
-import { importAndWait } from "../../workflows/importAndWait.js";
+import { importAndWait, normalizeImportJob } from "../../workflows/importAndWait.js";
 import { editAndWait } from "../../workflows/editAndWait.js";
+import { pollJob } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
@@ -53,7 +54,8 @@ export const COMMANDS = {
                 emit(ctx.io, `Submitted import job ${submit.job_id}`, submit);
                 return 0;
             }
-            const out = await importAndWait(c, { project_id: submit.project_id, add_media: {} });
+            const final = await pollJob((id) => c.getJob(id), submit.job_id);
+            const out = normalizeImportJob(submit, final);
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
         }

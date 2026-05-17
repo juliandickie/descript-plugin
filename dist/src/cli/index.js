@@ -48,7 +48,7 @@ export async function runCli(argv, opts = {}) {
     };
     if (!command || command === "help" || flags.help === true) {
         io.stdout(USAGE + "\n");
-        return command ? 0 : 2;
+        return (command || flags.help === true) ? 0 : 2;
     }
     const handler = COMMANDS[command];
     if (!handler) {

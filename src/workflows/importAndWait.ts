@@ -1,5 +1,5 @@
 import type { DescriptClient } from "../client/index.js";
-import type { ImportRequest } from "../client/types.js";
+import type { ImportRequest, SubmitJobResponse, JobStatus } from "../client/types.js";
 import { pollJob, type PollOptions } from "./poll.js";
 
 export interface ImportOutcome {
@@ -14,13 +14,7 @@ export interface ImportOutcome {
   error?: string;
 }
 
-export async function importAndWait(
-  client: DescriptClient,
-  req: ImportRequest,
-  poll: PollOptions = {}
-): Promise<ImportOutcome> {
-  const submit = await client.importProjectMedia(req);
-  const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
+export function normalizeImportJob(submit: SubmitJobResponse, final: JobStatus): ImportOutcome {
   if (final.job_type !== "import/project_media") {
     throw new Error(`Unexpected job_type "${final.job_type}" for import job ${submit.job_id}`);
   }
@@ -45,4 +39,14 @@ export async function importAndWait(
     createdCompositions: result.created_compositions ?? [],
     failedMedia
   };
+}
+
+export async function importAndWait(
+  client: DescriptClient,
+  req: ImportRequest,
+  poll: PollOptions = {}
+): Promise<ImportOutcome> {
+  const submit = await client.importProjectMedia(req);
+  const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
+  return normalizeImportJob(submit, final);
 }
