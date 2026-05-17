@@ -13,7 +13,7 @@ Full programmatic access to the Descript API via a Node/TypeScript CLI, wrapped 
 `npm run build` compiles src/ to dist/ (committed for zero-install). Zero runtime dependencies. Tests: `npm test` (no live API).
 
 ## Cost Safety
-agent, publish, and batch spend money. Keep disable-model-invocation on descript-publish and descript-batch. Keep the batch dry-run gate. Always report ai_credits_used and media_seconds_used.
+The agent, publish, and batch operations spend money (AI credits and media seconds). descript-publish and descript-batch are operator-only via the disable-model-invocation flag. Keep that flag on both. descript-edit wraps the cost-bearing agent command and is intentionally model-invocable WITHOUT disable-model-invocation, gated instead by a mandatory in-skill confirmation step so Claude can run edits conversationally. Do not add disable-model-invocation to descript-edit. Keep the batch dry-run gate. Always report ai_credits_used and media_seconds_used.
 
 ## Versioning
 SemVer in plugin.json and package.json. Tag vX.Y.Z. Update CHANGELOG.
