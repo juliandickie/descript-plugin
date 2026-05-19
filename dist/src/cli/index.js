@@ -4,7 +4,7 @@ const USAGE = `Usage: descript <command> [options]
 
 Commands:
   status                         Check API auth and service status
-  config set|list                Manage API token profiles
+  config set|list|edit           Manage API token profiles (edit opens the file in your editor)
   import --url|--file|--media    Import media, create a project (--media <json> add_media, --compositions <json>)
   agent --prompt [...]           Run an Underlord agent edit
   publish --project-id [...]     Publish a composition

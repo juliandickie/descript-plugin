@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import type { ImportRequest, EditInDescriptBody } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail } from "../output.js";
-import { configSet, configList } from "./config.js";
+import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
 
 export interface Ctx {
@@ -68,7 +68,8 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const sub = ctx.args[0];
     if (sub === "set") return configSet({ flags: ctx.flags, io: ctx.io });
     if (sub === "list") return configList({ flags: ctx.flags, io: ctx.io });
-    fail(ctx.io, "Usage: descript config set|list [--profile name] [--token value]");
+    if (sub === "edit") return configEdit({ flags: ctx.flags, io: ctx.io, env: ctx.env });
+    fail(ctx.io, "Usage: descript config set|list|edit [--profile name] [--token value] [--editor cmd]");
     return 2;
   },
 

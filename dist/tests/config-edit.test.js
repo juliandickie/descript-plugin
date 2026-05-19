@@ -128,3 +128,19 @@ test("corrupt credentials.json returns 2 with clear message and leaves file unch
     assert.equal(readFileSync(t.path, "utf8"), corruptContent, "corrupt file must be left byte-for-byte unchanged");
     t.cleanup();
 });
+test("descript config edit runs end to end and exits 0", async () => {
+    const t = tmpCfg();
+    const { configEdit: ce } = await import("../src/cli/commands/config.js");
+    const out = [];
+    const code = ce({ flags: { profile: "smoke" }, io: { stdout: (s) => out.push(s), stderr: (s) => out.push(s), json: false }, env: { EDITOR: "true" }, configPath: t.path, spawnEditor: () => { }, platform: "linux" });
+    assert.equal(code, 0);
+    assert.match(out.join(""), /Set the "api_token" value for profile "smoke"/);
+    t.cleanup();
+});
+test("unknown config subcommand still exits 2 with set|list|edit usage", async () => {
+    const { runCli } = await import("../src/cli/index.js");
+    const out = [];
+    const code = await runCli(["config", "wat"], { env: {}, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.match(out.join(""), /set\|list\|edit/);
+});

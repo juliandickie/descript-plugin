@@ -9,7 +9,7 @@ import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { readFileSync } from "node:fs";
 import { emit, fail } from "../output.js";
-import { configSet, configList } from "./config.js";
+import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
 function client(ctx) {
     const creds = resolveCredentials({
@@ -57,7 +57,9 @@ export const COMMANDS = {
             return configSet({ flags: ctx.flags, io: ctx.io });
         if (sub === "list")
             return configList({ flags: ctx.flags, io: ctx.io });
-        fail(ctx.io, "Usage: descript config set|list [--profile name] [--token value]");
+        if (sub === "edit")
+            return configEdit({ flags: ctx.flags, io: ctx.io, env: ctx.env });
+        fail(ctx.io, "Usage: descript config set|list|edit [--profile name] [--token value] [--editor cmd]");
         return 2;
     },
     async import(ctx) {
