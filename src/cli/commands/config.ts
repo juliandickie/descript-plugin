@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { defaultConfigPath, redactToken } from "../../config/credentials.js";
 import type { IO } from "../output.js";
@@ -32,5 +33,58 @@ export function configList(ctx: ConfigCtx): number {
   emit(ctx.io, `Profiles: ${names.join(", ") || "none"} (default: ${cfg.default_profile ?? "none"})`, {
     default_profile: cfg.default_profile, profiles: names
   });
+  return 0;
+}
+
+export interface ConfigEditCtx {
+  flags: Record<string, string | boolean>;
+  io: IO;
+  env: Record<string, string | undefined>;
+  configPath?: string;
+  spawnEditor?: (cmd: string, args: string[]) => void;
+  platform?: NodeJS.Platform;
+}
+
+function resolveEditor(
+  flags: Record<string, string | boolean>,
+  env: Record<string, string | undefined>,
+  platform: NodeJS.Platform,
+  path: string
+): { cmd: string; args: string[]; display: string } {
+  const flag = typeof flags.editor === "string" ? flags.editor : undefined;
+  const chosen = flag ?? env.VISUAL ?? env.EDITOR;
+  if (chosen) return { cmd: chosen, args: [path], display: chosen };
+  if (platform === "darwin") return { cmd: "open", args: ["-t", path], display: "open -t" };
+  return { cmd: "nano", args: [path], display: "nano" };
+}
+
+export function configEdit(ctx: ConfigEditCtx): number {
+  const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
+  const path = ctx.configPath ?? defaultConfigPath();
+  const platform = ctx.platform ?? process.platform;
+  const spawnEditorFn = ctx.spawnEditor ?? ((cmd: string, args: string[]) => {
+    spawnSync(cmd, args, { stdio: "inherit" });
+  });
+
+  mkdirSync(dirname(path), { recursive: true });
+  const existed = existsSync(path);
+  const cfg: CfgFile = existed ? (JSON.parse(readFileSync(path, "utf8")) as CfgFile) : {};
+  const profiles = cfg.profiles ?? {};
+  let changed = !existed;
+  if (!(profile in profiles)) { profiles[profile] = { api_token: "" }; changed = true; }
+  cfg.profiles = profiles;
+  if (cfg.default_profile === undefined) { cfg.default_profile = profile; changed = true; }
+  if (changed) writeFileSync(path, JSON.stringify(cfg, null, 2), { mode: 0o600 });
+  chmodSync(path, 0o600);
+
+  const ed = resolveEditor(ctx.flags, ctx.env, platform, path);
+  let launchFailed = false;
+  try { spawnEditorFn(ed.cmd, ed.args); } catch { launchFailed = true; }
+
+  const verify = `descript status --profile ${profile}`;
+  const human = launchFailed
+    ? `Prepared ${path} (profile "${profile}", owner-only). Could not open an editor automatically - open that file in your text editor, set the "api_token" value, save, then run: ${verify}`
+    : `Opening ${path} in ${ed.display}. Set the "api_token" value for profile "${profile}", save and close, then run: ${verify}`;
+  emit(ctx.io, human, { path, profile, editor: ed.display, launched: !launchFailed });
   return 0;
 }
