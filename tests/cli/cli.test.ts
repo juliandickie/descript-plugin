@@ -1,7 +1,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { runCli, parseArgv } from "../../src/cli/index.js";
-import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
+import { installMockFetch, restoreFetch, installNoNetwork } from "../helpers/mockFetch.js";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,10 +22,17 @@ test("status command prints ok and exits 0", async () => {
 });
 
 test("missing token exits non-zero with a clear message", async () => {
+  // Hermetic: never read the real ~/.config/descript, never touch the network.
+  installNoNetwork();
+  const dir = mkdtempSync(join(tmpdir(), "descript-noenv-"));
   const c = capture();
-  const code = await runCli(["status"], { env: {}, stdout: c.write, stderr: c.write });
+  const code = await runCli(["status"], {
+    env: { DESCRIPT_CONFIG_PATH: join(dir, "nonexistent.json") },
+    stdout: c.write, stderr: c.write
+  });
   assert.notEqual(code, 0);
   assert.match(c.out.join(""), /No Descript API token/);
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("api error exits with code 3 and prints the hint", async () => {

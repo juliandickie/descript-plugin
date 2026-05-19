@@ -22,6 +22,13 @@ export function installMockFetch(sequence) {
     });
     return { calls };
 }
+// Defense-in-depth for hermeticity: any test that reaches the network
+// without an explicit mock should fail loudly here, never hit a real API.
+export function installNoNetwork() {
+    mock.method(globalThis, "fetch", async () => {
+        throw new Error("unexpected network call in test (no mock fetch installed)");
+    });
+}
 export function restoreFetch() {
     mock.restoreAll();
 }

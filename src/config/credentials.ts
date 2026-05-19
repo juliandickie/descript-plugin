@@ -44,7 +44,7 @@ export function resolveCredentials(opts: ResolveOptions = {}): ResolvedCredentia
     return { token: env.DESCRIPT_API_TOKEN, profile: profile ?? "default", source: "env" };
   }
 
-  const path = opts.configPath ?? defaultConfigPath();
+  const path = opts.configPath ?? env.DESCRIPT_CONFIG_PATH ?? defaultConfigPath();
   const cfg = readConfig(path);
   if (cfg?.profiles) {
     const name = profile ?? cfg.default_profile ?? "default";

@@ -23,7 +23,7 @@ export function resolveCredentials(opts = {}) {
     if (env.DESCRIPT_API_TOKEN) {
         return { token: env.DESCRIPT_API_TOKEN, profile: profile ?? "default", source: "env" };
     }
-    const path = opts.configPath ?? defaultConfigPath();
+    const path = opts.configPath ?? env.DESCRIPT_CONFIG_PATH ?? defaultConfigPath();
     const cfg = readConfig(path);
     if (cfg?.profiles) {
         const name = profile ?? cfg.default_profile ?? "default";
