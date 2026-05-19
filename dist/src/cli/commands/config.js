@@ -3,6 +3,15 @@ import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { defaultConfigPath, redactToken } from "../../config/credentials.js";
 import { emit, fail } from "../output.js";
+function parseCfgFile(io, path) {
+    try {
+        return JSON.parse(readFileSync(path, "utf8"));
+    }
+    catch {
+        fail(io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+        return null;
+    }
+}
 export function configSet(ctx) {
     const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
     const token = typeof ctx.flags.token === "string" ? ctx.flags.token : undefined;
@@ -14,13 +23,10 @@ export function configSet(ctx) {
     mkdirSync(dirname(path), { recursive: true });
     let cfg = {};
     if (existsSync(path)) {
-        try {
-            cfg = JSON.parse(readFileSync(path, "utf8"));
-        }
-        catch {
-            fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+        const parsed = parseCfgFile(ctx.io, path);
+        if (parsed === null)
             return 2;
-        }
+        cfg = parsed;
     }
     cfg.profiles = { ...(cfg.profiles ?? {}), [profile]: { api_token: token } };
     cfg.default_profile = cfg.default_profile ?? profile;
@@ -34,14 +40,10 @@ export function configList(ctx) {
         emit(ctx.io, "No profiles configured.", { profiles: [] });
         return 0;
     }
-    let cfg;
-    try {
-        cfg = JSON.parse(readFileSync(path, "utf8"));
-    }
-    catch {
-        fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+    const parsed = parseCfgFile(ctx.io, path);
+    if (parsed === null)
         return 2;
-    }
+    const cfg = parsed;
     const names = Object.keys(cfg.profiles ?? {});
     emit(ctx.io, `Profiles: ${names.join(", ") || "none"} (default: ${cfg.default_profile ?? "none"})`, {
         default_profile: cfg.default_profile, profiles: names
@@ -68,13 +70,10 @@ export function configEdit(ctx) {
     const existed = existsSync(path);
     let cfg = {};
     if (existed) {
-        try {
-            cfg = JSON.parse(readFileSync(path, "utf8"));
-        }
-        catch {
-            fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+        const parsed = parseCfgFile(ctx.io, path);
+        if (parsed === null)
             return 2;
-        }
+        cfg = parsed;
     }
     const profiles = cfg.profiles ?? {};
     // changed starts true for a new file; set true on any structural modification. Controls the write; chmod is unconditional.
