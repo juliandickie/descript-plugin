@@ -8,6 +8,7 @@ import { emit, fail } from "../output.js";
 export interface ConfigCtx {
   flags: Record<string, string | boolean>;
   io: IO;
+  configPath?: string;
 }
 interface CfgFile { default_profile?: string; profiles?: Record<string, { api_token: string }>; }
 
@@ -15,9 +16,17 @@ export function configSet(ctx: ConfigCtx): number {
   const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
   const token = typeof ctx.flags.token === "string" ? ctx.flags.token : undefined;
   if (!token) { fail(ctx.io, "Provide --token (and optionally --profile)"); return 2; }
-  const path = defaultConfigPath();
+  const path = ctx.configPath ?? defaultConfigPath();
   mkdirSync(dirname(path), { recursive: true });
-  const cfg: CfgFile = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+  let cfg: CfgFile = {};
+  if (existsSync(path)) {
+    try {
+      cfg = JSON.parse(readFileSync(path, "utf8")) as CfgFile;
+    } catch {
+      fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+      return 2;
+    }
+  }
   cfg.profiles = { ...(cfg.profiles ?? {}), [profile]: { api_token: token } };
   cfg.default_profile = cfg.default_profile ?? profile;
   writeFileSync(path, JSON.stringify(cfg, null, 2), { mode: 0o600 });
@@ -26,9 +35,15 @@ export function configSet(ctx: ConfigCtx): number {
 }
 
 export function configList(ctx: ConfigCtx): number {
-  const path = defaultConfigPath();
+  const path = ctx.configPath ?? defaultConfigPath();
   if (!existsSync(path)) { emit(ctx.io, "No profiles configured.", { profiles: [] }); return 0; }
-  const cfg: CfgFile = JSON.parse(readFileSync(path, "utf8"));
+  let cfg: CfgFile;
+  try {
+    cfg = JSON.parse(readFileSync(path, "utf8")) as CfgFile;
+  } catch {
+    fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+    return 2;
+  }
   const names = Object.keys(cfg.profiles ?? {});
   emit(ctx.io, `Profiles: ${names.join(", ") || "none"} (default: ${cfg.default_profile ?? "none"})`, {
     default_profile: cfg.default_profile, profiles: names

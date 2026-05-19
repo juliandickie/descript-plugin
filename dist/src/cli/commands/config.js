@@ -10,9 +10,18 @@ export function configSet(ctx) {
         fail(ctx.io, "Provide --token (and optionally --profile)");
         return 2;
     }
-    const path = defaultConfigPath();
+    const path = ctx.configPath ?? defaultConfigPath();
     mkdirSync(dirname(path), { recursive: true });
-    const cfg = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+    let cfg = {};
+    if (existsSync(path)) {
+        try {
+            cfg = JSON.parse(readFileSync(path, "utf8"));
+        }
+        catch {
+            fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+            return 2;
+        }
+    }
     cfg.profiles = { ...(cfg.profiles ?? {}), [profile]: { api_token: token } };
     cfg.default_profile = cfg.default_profile ?? profile;
     writeFileSync(path, JSON.stringify(cfg, null, 2), { mode: 0o600 });
@@ -20,12 +29,19 @@ export function configSet(ctx) {
     return 0;
 }
 export function configList(ctx) {
-    const path = defaultConfigPath();
+    const path = ctx.configPath ?? defaultConfigPath();
     if (!existsSync(path)) {
         emit(ctx.io, "No profiles configured.", { profiles: [] });
         return 0;
     }
-    const cfg = JSON.parse(readFileSync(path, "utf8"));
+    let cfg;
+    try {
+        cfg = JSON.parse(readFileSync(path, "utf8"));
+    }
+    catch {
+        fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+        return 2;
+    }
     const names = Object.keys(cfg.profiles ?? {});
     emit(ctx.io, `Profiles: ${names.join(", ") || "none"} (default: ${cfg.default_profile ?? "none"})`, {
         default_profile: cfg.default_profile, profiles: names
