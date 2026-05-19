@@ -12,6 +12,7 @@ import type { ImportRequest, EditInDescriptBody } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail } from "../output.js";
 import { configSet, configList } from "./config.js";
+import { formatStatus } from "./status.js";
 
 export interface Ctx {
   args: string[];
@@ -59,7 +60,7 @@ function readJsonFile(ctx: Ctx, path: string): unknown | undefined {
 export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
   async status(ctx) {
     const r = await client(ctx).getStatus();
-    emit(ctx.io, `Descript API status: ${r.status}`, r);
+    emit(ctx.io, formatStatus(r), r);
     return 0;
   },
 

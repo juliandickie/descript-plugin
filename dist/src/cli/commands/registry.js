@@ -10,6 +10,7 @@ import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { readFileSync } from "node:fs";
 import { emit, fail } from "../output.js";
 import { configSet, configList } from "./config.js";
+import { formatStatus } from "./status.js";
 function client(ctx) {
     const creds = resolveCredentials({
         flagToken: typeof ctx.flags.token === "string" ? ctx.flags.token : undefined,
@@ -47,7 +48,7 @@ function readJsonFile(ctx, path) {
 export const COMMANDS = {
     async status(ctx) {
         const r = await client(ctx).getStatus();
-        emit(ctx.io, `Descript API status: ${r.status}`, r);
+        emit(ctx.io, formatStatus(r), r);
         return 0;
     },
     async config(ctx) {

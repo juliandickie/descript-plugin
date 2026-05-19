@@ -175,8 +175,14 @@ export interface ProjectDetail {
   media_files: Record<string, { type: "audio" | "video" | "image" | "sequence" | "other"; duration?: number }>;
   compositions: Array<{ id: string; name: string; duration?: number; media_type?: string }>;
 }
+// The live /status endpoint is vendor-flagged "work in progress": its actual
+// payload is { drive_id, api_version } while its OpenAPI schema documents
+// { status: "ok" }, and a 204/empty 2xx is also possible. All fields are
+// therefore optional to reflect the unstable contract.
 export interface StatusResponse {
-  status: "ok";
+  status?: "ok";
+  drive_id?: string;
+  api_version?: string;
 }
 export interface PublishedProjectMetadata {
   download_url?: string;
