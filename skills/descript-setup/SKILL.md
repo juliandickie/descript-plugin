@@ -66,10 +66,15 @@ If the user prefers to edit manually -
 4. Verify - descript status --profile <name>
 
 ## Headless and automation
-The same token works as DESCRIPT_API_TOKEN, or via the plugin api_token
-config exported to the CLI as CLAUDE_PLUGIN_OPTION_API_TOKEN. Select a Drive
-with --profile <name> or DESCRIPT_PROFILE. For 1Password-driven automation,
-use op run or op read to populate DESCRIPT_API_TOKEN at invocation.
+Token resolution is tried in this order: the --token flag, then
+DESCRIPT_API_TOKEN, then the credentials file entry for the selected profile,
+then CLAUDE_PLUGIN_OPTION_API_TOKEN as a last resort. A credentials file
+profile therefore takes precedence over CLAUDE_PLUGIN_OPTION_API_TOKEN. If
+none are present the command errors. For 1Password-driven automation, use
+op run or op read to populate DESCRIPT_API_TOKEN at invocation.
+
+Profile selection follows this order: explicit --profile <name>, then
+DESCRIPT_PROFILE, then CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE.
 
 ## Profiles
 List configured profiles - descript config list. Each Drive gets its own
