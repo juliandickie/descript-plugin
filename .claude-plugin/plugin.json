@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "descript",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Full programmatic access to the Descript API. Proactively activates for: (1) importing media into Descript, (2) Underlord agent edits, (3) publishing compositions, (4) bulk video pipelines, (5) Descript job status.",
   "author": {
     "name": "Julian Dickie",
