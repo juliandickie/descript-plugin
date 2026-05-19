@@ -45,13 +45,23 @@ export function configEdit(ctx) {
     const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
     const path = ctx.configPath ?? defaultConfigPath();
     const platform = ctx.platform ?? process.platform;
-    const spawnEditorFn = ctx.spawnEditor ?? ((cmd, args) => {
+    const launchEditor = ctx.spawnEditor ?? ((cmd, args) => {
         spawnSync(cmd, args, { stdio: "inherit" });
     });
     mkdirSync(dirname(path), { recursive: true });
     const existed = existsSync(path);
-    const cfg = existed ? JSON.parse(readFileSync(path, "utf8")) : {};
+    let cfg = {};
+    if (existed) {
+        try {
+            cfg = JSON.parse(readFileSync(path, "utf8"));
+        }
+        catch {
+            fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+            return 2;
+        }
+    }
     const profiles = cfg.profiles ?? {};
+    // changed starts true for a new file; set true on any structural modification. Controls the write; chmod is unconditional.
     let changed = !existed;
     if (!(profile in profiles)) {
         profiles[profile] = { api_token: "" };
@@ -68,7 +78,7 @@ export function configEdit(ctx) {
     const ed = resolveEditor(ctx.flags, ctx.env, platform, path);
     let launchFailed = false;
     try {
-        spawnEditorFn(ed.cmd, ed.args);
+        launchEditor(ed.cmd, ed.args);
     }
     catch {
         launchFailed = true;

@@ -62,14 +62,23 @@ export function configEdit(ctx: ConfigEditCtx): number {
   const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
   const path = ctx.configPath ?? defaultConfigPath();
   const platform = ctx.platform ?? process.platform;
-  const spawnEditorFn = ctx.spawnEditor ?? ((cmd: string, args: string[]) => {
+  const launchEditor = ctx.spawnEditor ?? ((cmd: string, args: string[]) => {
     spawnSync(cmd, args, { stdio: "inherit" });
   });
 
   mkdirSync(dirname(path), { recursive: true });
   const existed = existsSync(path);
-  const cfg: CfgFile = existed ? (JSON.parse(readFileSync(path, "utf8")) as CfgFile) : {};
+  let cfg: CfgFile = {};
+  if (existed) {
+    try {
+      cfg = JSON.parse(readFileSync(path, "utf8")) as CfgFile;
+    } catch {
+      fail(ctx.io, `credentials.json exists but is not valid JSON. Fix or delete ${path}, then re-run.`);
+      return 2;
+    }
+  }
   const profiles = cfg.profiles ?? {};
+  // changed starts true for a new file; set true on any structural modification. Controls the write; chmod is unconditional.
   let changed = !existed;
   if (!(profile in profiles)) { profiles[profile] = { api_token: "" }; changed = true; }
   cfg.profiles = profiles;
@@ -79,7 +88,7 @@ export function configEdit(ctx: ConfigEditCtx): number {
 
   const ed = resolveEditor(ctx.flags, ctx.env, platform, path);
   let launchFailed = false;
-  try { spawnEditorFn(ed.cmd, ed.args); } catch { launchFailed = true; }
+  try { launchEditor(ed.cmd, ed.args); } catch { launchFailed = true; }
 
   const verify = `descript status --profile ${profile}`;
   const human = launchFailed

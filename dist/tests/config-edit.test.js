@@ -110,3 +110,21 @@ test("spawn failure still leaves a correct 0600 file, prints path, returns 0", (
     assert.ok(c.out.join("").includes("Could not open an editor"));
     t.cleanup();
 });
+test("corrupt credentials.json returns 2 with clear message and leaves file unchanged", () => {
+    const t = tmpCfg();
+    mkdirSyncFor(t.path);
+    const corruptContent = "{ broken";
+    writeFileSync(t.path, corruptContent, { mode: 0o600 });
+    const c = cap();
+    let code;
+    assert.doesNotThrow(() => {
+        code = configEdit({
+            flags: { profile: "idd" }, io: c.io, env: {},
+            configPath: t.path, spawnEditor: noopEditor, platform: "darwin"
+        });
+    });
+    assert.equal(code, 2);
+    assert.ok(c.out.join("").match(/not valid JSON/), "expected 'not valid JSON' in output");
+    assert.equal(readFileSync(t.path, "utf8"), corruptContent, "corrupt file must be left byte-for-byte unchanged");
+    t.cleanup();
+});
