@@ -53,12 +53,13 @@ export const COMMANDS = {
     },
     async config(ctx) {
         const sub = ctx.args[0];
+        const configPath = ctx.env.DESCRIPT_CONFIG_PATH;
         if (sub === "set")
-            return configSet({ flags: ctx.flags, io: ctx.io });
+            return configSet({ flags: ctx.flags, io: ctx.io, configPath });
         if (sub === "list")
-            return configList({ flags: ctx.flags, io: ctx.io });
+            return configList({ flags: ctx.flags, io: ctx.io, configPath });
         if (sub === "edit")
-            return configEdit({ flags: ctx.flags, io: ctx.io, env: ctx.env });
+            return configEdit({ flags: ctx.flags, io: ctx.io, env: ctx.env, configPath });
         fail(ctx.io, "Usage: descript config set|list|edit [--profile name] [--token value] [--editor cmd]");
         return 2;
     },

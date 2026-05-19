@@ -84,3 +84,39 @@ test("plugin default_profile env selects the profile, but flag and DESCRIPT_PROF
   assert.equal(resolveCredentials({ env: { DESCRIPT_PROFILE: "idd", CLAUDE_PLUGIN_OPTION_DEFAULT_PROFILE: "promo" }, configPath: path }).token, "IDD");
   rmSync(dir, { recursive: true, force: true });
 });
+
+// ---- DESCRIPT_CONFIG_PATH env var precedence in resolveCredentials ----
+// These are coverage-gap tests: they document already-correct behavior,
+// so they pass against current code by design (not red-green).
+
+test("DESCRIPT_CONFIG_PATH env var resolves token from that file with source=file (coverage gap)", () => {
+  const { path, dir } = tmpConfig({ default_profile: "default", profiles: { default: { api_token: "CFG_PATH_TOKEN" } } });
+  const c = resolveCredentials({ env: { DESCRIPT_CONFIG_PATH: path } });
+  assert.equal(c.token, "CFG_PATH_TOKEN");
+  assert.equal(c.source, "file");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("explicit configPath option overrides DESCRIPT_CONFIG_PATH env var (coverage gap)", () => {
+  const a = tmpConfig({ default_profile: "default", profiles: { default: { api_token: "FROM_OPT" } } });
+  const b = tmpConfig({ default_profile: "default", profiles: { default: { api_token: "FROM_ENV" } } });
+  // opts.configPath must win over env.DESCRIPT_CONFIG_PATH
+  const c = resolveCredentials({ env: { DESCRIPT_CONFIG_PATH: b.path }, configPath: a.path });
+  assert.equal(c.token, "FROM_OPT");
+  assert.equal(c.source, "file");
+  rmSync(a.dir, { recursive: true, force: true });
+  rmSync(b.dir, { recursive: true, force: true });
+});
+
+test("--token flag and DESCRIPT_API_TOKEN both win over DESCRIPT_CONFIG_PATH (coverage gap)", () => {
+  const { path, dir } = tmpConfig({ default_profile: "default", profiles: { default: { api_token: "FILE_TOKEN" } } });
+  // --token (flagToken) has highest precedence
+  const fromFlag = resolveCredentials({ flagToken: "FLAG_TOKEN", env: { DESCRIPT_CONFIG_PATH: path } });
+  assert.equal(fromFlag.token, "FLAG_TOKEN");
+  assert.equal(fromFlag.source, "flag");
+  // DESCRIPT_API_TOKEN beats DESCRIPT_CONFIG_PATH
+  const fromEnv = resolveCredentials({ env: { DESCRIPT_API_TOKEN: "ENV_TOKEN", DESCRIPT_CONFIG_PATH: path } });
+  assert.equal(fromEnv.token, "ENV_TOKEN");
+  assert.equal(fromEnv.source, "env");
+  rmSync(dir, { recursive: true, force: true });
+});

@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { configSet, configList } from "../src/cli/commands/config.js";
+import { runCli } from "../src/cli/index.js";
 
 function mkdirFor(p: string) { mkdirSync(dirname(p), { recursive: true }); }
 
@@ -84,4 +85,33 @@ test("configSet on a valid file (injected temp path) writes the profile and retu
   const cfg = JSON.parse(readFileSync(t.path, "utf8"));
   assert.equal(cfg.profiles?.idd?.api_token, "tok_test_456");
   t.cleanup();
+});
+
+// ---- SYMMETRY: DESCRIPT_CONFIG_PATH must be honored by config list/set/edit ----
+// This test is RED before the registry.ts fix and GREEN after.
+
+test("DESCRIPT_CONFIG_PATH: config list reads from the env-override path, not defaultConfigPath()", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-cfgpath-sym-"));
+  const credPath = join(dir, "creds.json");
+  // Write a temp credentials file containing a uniquely-named sentinel profile
+  // that cannot collide with any real ~/.config/descript content.
+  writeFileSync(credPath, JSON.stringify({
+    default_profile: "zz_sentinel_cfgpath",
+    profiles: { zz_sentinel_cfgpath: { api_token: "tok_sentinel_abc123" } }
+  }), { mode: 0o600 });
+
+  const out: string[] = [];
+  const code = await runCli(["config", "list"], {
+    env: { DESCRIPT_CONFIG_PATH: credPath },
+    stdout: (s) => out.push(s),
+    stderr: (s) => out.push(s)
+  });
+  rmSync(dir, { recursive: true, force: true });
+
+  assert.equal(code, 0, "config list should exit 0");
+  const combined = out.join("");
+  assert.ok(
+    combined.includes("zz_sentinel_cfgpath"),
+    `Expected sentinel profile 'zz_sentinel_cfgpath' in output, got: ${combined}`
+  );
 });
