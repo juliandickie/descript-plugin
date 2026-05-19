@@ -1,9 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, existsSync, readFileSync, statSync, writeFileSync, chmodSync } from "node:fs";
+import { mkdirSync as mkdirSyncFs } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { configEdit } from "../src/cli/commands/config.js";
+function mkdirSyncFor(p) { mkdirSyncFs(dirname(p), { recursive: true }); }
 function cap() {
     const out = [];
     return { io: { stdout: (s) => out.push(s), stderr: (s) => out.push(s), json: false }, out };
@@ -26,5 +28,34 @@ test("creates dir and a 0600 file with the skeleton when absent", () => {
         profiles: { idd: { api_token: "" } }, default_profile: "idd"
     });
     assert.equal(statSync(t.path).mode & 0o777, 0o600);
+    t.cleanup();
+});
+test("adds a new profile while preserving existing profiles and default_profile", () => {
+    const t = tmpCfg();
+    mkdirSyncFor(t.path);
+    writeFileSync(t.path, JSON.stringify({ default_profile: "idd", profiles: { idd: { api_token: "SECRET" } } }), { mode: 0o600 });
+    const c = cap();
+    const code = configEdit({
+        flags: { profile: "promarketing" }, io: c.io, env: {},
+        configPath: t.path, spawnEditor: noopEditor, platform: "darwin"
+    });
+    assert.equal(code, 0);
+    const cfg = JSON.parse(readFileSync(t.path, "utf8"));
+    assert.equal(cfg.profiles.idd.api_token, "SECRET");
+    assert.equal(cfg.profiles.promarketing.api_token, "");
+    assert.equal(cfg.default_profile, "idd");
+    t.cleanup();
+});
+test("does not modify or clear an existing target profile token", () => {
+    const t = tmpCfg();
+    mkdirSyncFor(t.path);
+    writeFileSync(t.path, JSON.stringify({ default_profile: "idd", profiles: { idd: { api_token: "SECRET" } } }), { mode: 0o600 });
+    const c = cap();
+    const code = configEdit({
+        flags: { profile: "idd" }, io: c.io, env: {},
+        configPath: t.path, spawnEditor: noopEditor, platform: "darwin"
+    });
+    assert.equal(code, 0);
+    assert.equal(JSON.parse(readFileSync(t.path, "utf8")).profiles.idd.api_token, "SECRET");
     t.cleanup();
 });
