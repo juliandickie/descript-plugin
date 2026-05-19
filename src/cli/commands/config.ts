@@ -77,6 +77,7 @@ function resolveEditor(
 
 export function configEdit(ctx: ConfigEditCtx): number {
   const profile = typeof ctx.flags.profile === "string" ? ctx.flags.profile : "default";
+  // configPath already carries DESCRIPT_CONFIG_PATH when the registry set it; do not re-read ctx.env here.
   const path = ctx.configPath ?? defaultConfigPath();
   const platform = ctx.platform ?? process.platform;
   const launchEditor = ctx.spawnEditor ?? ((cmd: string, args: string[]) => {

@@ -93,8 +93,32 @@ test("DESCRIPT_CONFIG_PATH: config list reads from the env-override path, not de
         stdout: (s) => out.push(s),
         stderr: (s) => out.push(s)
     });
-    rmSync(dir, { recursive: true, force: true });
-    assert.equal(code, 0, "config list should exit 0");
-    const combined = out.join("");
-    assert.ok(combined.includes("zz_sentinel_cfgpath"), `Expected sentinel profile 'zz_sentinel_cfgpath' in output, got: ${combined}`);
+    try {
+        assert.equal(code, 0, "config list should exit 0");
+        const combined = out.join("");
+        assert.ok(combined.includes("zz_sentinel_cfgpath"), `Expected sentinel profile 'zz_sentinel_cfgpath' in output, got: ${combined}`);
+    }
+    finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+test("DESCRIPT_CONFIG_PATH: config set writes to the env-override path, not defaultConfigPath()", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-cfgpath-set-sym-"));
+    const credPath = join(dir, "creds.json");
+    // Use a uniquely-named sentinel profile that cannot collide with any real ~/.config/descript content.
+    const out = [];
+    const code = await runCli(["config", "set", "--profile", "zz_sentinel_set", "--token", "tok_zz_sentinel"], {
+        env: { DESCRIPT_CONFIG_PATH: credPath },
+        stdout: (s) => out.push(s),
+        stderr: (s) => out.push(s)
+    });
+    try {
+        assert.equal(code, 0, "config set should exit 0");
+        assert.ok(existsSync(credPath), "credentials file should have been created at the override path");
+        const cfg = JSON.parse(readFileSync(credPath, "utf8"));
+        assert.equal(cfg.profiles?.zz_sentinel_set?.api_token, "tok_zz_sentinel", "token should be written to the override path under the sentinel profile");
+    }
+    finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
 });
