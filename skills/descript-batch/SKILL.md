@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Descript Batch
 
-Operator-triggered. Bulk operations spend significant AI credits and media seconds.
+Operator-triggered. When a manifest includes agent_prompt items, the run spends AI credits and media seconds (potentially significant). Pure import-and-publish manifests are not themselves billable, but a bulk run still touches many projects at once and the dry-run gate is mandatory regardless.
 
 ## Instructions
 1. Build a JSON manifest: { "concurrency": 2, "items": [ { "name": "...", "source": {"url": "..."}, "project_name": "...", "agent_prompt": "...", "publish": {"media_type":"Video","resolution":"1080p"} } ] }
