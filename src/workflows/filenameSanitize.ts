@@ -30,7 +30,10 @@ export function sanitize(title: string): string {
   s = s.replace(WHITESPACE_RUN, " ").trim();
 
   // 7. Drop forbidden chars and remaining ASCII controls (not whitespace)
-  s = s.replace(FORBIDDEN_DROP, "").trim();
+  s = s.replace(FORBIDDEN_DROP, "");
+
+  // 7b. Re-collapse whitespace (handles double-spaces left by interior forbidden-char removal)
+  s = s.replace(WHITESPACE_RUN, " ").trim();
 
   // 8. Truncate to 200 chars
   if (s.length > 200) s = s.slice(0, 200);

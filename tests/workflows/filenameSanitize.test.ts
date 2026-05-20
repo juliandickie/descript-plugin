@@ -54,7 +54,13 @@ test("truncates to 200 chars", () => {
   assert.equal(sanitize(longTitle).length, 200);
 });
 
-test("falls back to untitled-<slug> when result is empty after sanitisation", () => {
+test("interior forbidden-char removal does not leave double spaces", () => {
+  assert.equal(sanitize("a : b"), "a b");
+  assert.equal(sanitize("foo | bar | baz"), "foo bar baz");
+  assert.equal(sanitize("x ? y * z"), "x y z");
+});
+
+test("falls back to untitled when result is empty (slug suffix is the caller's job)", () => {
   assert.equal(sanitize(""), "untitled");
   assert.equal(sanitize(":|*?"), "untitled");
   assert.equal(sanitize("."), "untitled");
