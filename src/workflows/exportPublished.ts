@@ -23,7 +23,7 @@ export interface ExportPublishedResult {
   failed: Array<{ format: ExportFormat; error: string }>;
 }
 
-function extensionFromUrl(downloadUrl: string, publishType: string): string {
+function extensionFromUrl(downloadUrl: string, publishType: "audio" | "video" | "audiogram"): string {
   try {
     const u = new URL(downloadUrl);
     const path = decodeURIComponent(u.pathname);
@@ -54,7 +54,21 @@ export async function exportPublished(
   const targetDir = opts.projectFolder
     ? join(opts.outputDir, opts.projectFolder, safeTitle)
     : join(opts.outputDir, safeTitle);
-  mkdirSync(targetDir, { recursive: true });
+  try {
+    mkdirSync(targetDir, { recursive: true });
+  } catch (e) {
+    return {
+      ok: false,
+      slug: opts.slug,
+      title,
+      outputDir: targetDir,
+      written: [],
+      failed: opts.formats.map((format) => ({
+        format,
+        error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
+      }))
+    };
+  }
 
   const written: ExportFormat[] = [];
   const failed: Array<{ format: ExportFormat; error: string }> = [];

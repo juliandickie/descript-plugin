@@ -32,7 +32,22 @@ export async function exportPublished(client, opts) {
     const targetDir = opts.projectFolder
         ? join(opts.outputDir, opts.projectFolder, safeTitle)
         : join(opts.outputDir, safeTitle);
-    mkdirSync(targetDir, { recursive: true });
+    try {
+        mkdirSync(targetDir, { recursive: true });
+    }
+    catch (e) {
+        return {
+            ok: false,
+            slug: opts.slug,
+            title,
+            outputDir: targetDir,
+            written: [],
+            failed: opts.formats.map((format) => ({
+                format,
+                error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
+            }))
+        };
+    }
     const written = [];
     const failed = [];
     for (const fmt of opts.formats) {
