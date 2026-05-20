@@ -233,6 +233,44 @@ test("download-published with two slug sources (positional + --slugs) exits 2", 
     assert.equal(code, 2);
     assert.match(out.join(""), /exactly one/);
 });
+test("export PID (no CID) lists project comps and fans out", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-cli-"));
+    installMockFetch([
+        // GET /projects/p
+        { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c1", name: "A" }, { id: "c2", name: "B" }] } },
+        // publish c1 submit + result, c2 submit + result, metadata + curl per item
+        { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u", result: { status: "success", share_url: "https://web.descript.com/p/view/sA", download_url: "https://gcs/A.mp4?s=1", download_url_expires_at: "t" } } },
+        { status: 200, json: { download_url: "https://gcs/A.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "A" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+        { status: 200, text: "Abytes" },
+        { status: 201, json: { job_id: "j2", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "j2", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u", result: { status: "success", share_url: "https://web.descript.com/p/view/sB", download_url: "https://gcs/B.mp4?s=1", download_url_expires_at: "t" } } },
+        { status: 200, json: { download_url: "https://gcs/B.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "B" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\ny.\n" } },
+        { status: 200, text: "Bbytes" }
+    ]);
+    const out = [];
+    const code = await runCli(["export", "p", "--output-dir", dir, "--formats", "mp4", "--concurrency", "1", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(existsSync(join(dir, "A", "A.mp4")));
+    assert.ok(existsSync(join(dir, "B", "B.mp4")));
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --composition-ids narrows a project's comp list", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-cli-"));
+    installMockFetch([
+        { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c1", name: "A" }, { id: "c2", name: "B" }, { id: "c3", name: "C" }] } },
+        { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "j", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u", result: { status: "success", share_url: "https://web.descript.com/p/view/sC", download_url: "https://gcs/C.mp4?s=1", download_url_expires_at: "t" } } },
+        { status: 200, json: { download_url: "https://gcs/C.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "C" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nz.\n" } },
+        { status: 200, text: "Cbytes" }
+    ]);
+    const out = [];
+    const code = await runCli(["export", "p", "--composition-ids", "c3", "--output-dir", dir, "--formats", "mp4", "--concurrency", "1", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(existsSync(join(dir, "C", "C.mp4")));
+    assert.ok(!existsSync(join(dir, "A", "A.mp4")));
+    rmSync(dir, { recursive: true, force: true });
+});
 test("export PID CID publishes and downloads in one go", async () => {
     const dir = mkdtempSync(join(tmpdir(), "descript-exp-cli-"));
     installMockFetch([

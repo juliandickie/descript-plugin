@@ -8,6 +8,7 @@ import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { exportBatch } from "../../workflows/exportBatch.js";
+import { sanitize } from "../../workflows/filenameSanitize.js";
 import { readFileSync } from "node:fs";
 import { emit, fail } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
@@ -365,9 +366,9 @@ export const COMMANDS = {
         // Single-composition shape: descript export <PID> <CID>
         const positionalPid = ctx.args[0];
         const positionalCid = ctx.args[1];
-        const _projectsFlag = typeof ctx.flags.projects === "string" ? ctx.flags.projects : undefined;
-        const _compositionIdsFlag = typeof ctx.flags["composition-ids"] === "string" ? ctx.flags["composition-ids"] : undefined;
-        if (!positionalPid && !_projectsFlag) {
+        const projectsFlag = typeof ctx.flags.projects === "string" ? ctx.flags.projects : undefined;
+        const compositionIdsFlag = typeof ctx.flags["composition-ids"] === "string" ? ctx.flags["composition-ids"] : undefined;
+        if (!positionalPid && !projectsFlag) {
             fail(ctx.io, "Usage: descript export <project-id> [composition-id] | --projects pid1,pid2");
             return 2;
         }
@@ -375,9 +376,38 @@ export const COMMANDS = {
         if (positionalPid && positionalCid) {
             items = [{ projectId: positionalPid, compositionId: positionalCid }];
         }
-        else {
-            // Path branches for PID-only and --projects are Task 15. For now, fail with a clear stub.
-            fail(ctx.io, "Multi-composition export is implemented in a follow-up task; pass <PID> <CID> for now");
+        else if (positionalPid) {
+            // PID-only: list project compositions, optionally narrow via --composition-ids.
+            const project = await c.getProject(positionalPid);
+            const allComps = project.compositions ?? [];
+            let chosen = allComps;
+            if (compositionIdsFlag) {
+                const requested = new Set(compositionIdsFlag.split(",").map((s) => s.trim()).filter(Boolean));
+                chosen = allComps.filter((cc) => requested.has(cc.id));
+                if (chosen.length === 0) {
+                    fail(ctx.io, `--composition-ids matched nothing in project ${positionalPid}`);
+                    return 2;
+                }
+            }
+            items = chosen.map((cc) => ({ projectId: positionalPid, compositionId: cc.id }));
+        }
+        else if (projectsFlag) {
+            // Multi-project: list each project's comps, label with project folder.
+            const pids = projectsFlag.split(",").map((s) => s.trim()).filter(Boolean);
+            if (pids.length === 0) {
+                fail(ctx.io, "--projects must be a non-empty comma-separated list");
+                return 2;
+            }
+            for (const pid of pids) {
+                const project = await c.getProject(pid);
+                const folder = sanitize(project.name ?? pid);
+                for (const cc of project.compositions ?? []) {
+                    items.push({ projectId: pid, compositionId: cc.id, projectFolder: folder });
+                }
+            }
+        }
+        if (items.length === 0) {
+            fail(ctx.io, "no compositions to export");
             return 2;
         }
         const report = await exportBatch(c, {
