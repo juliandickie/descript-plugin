@@ -13,6 +13,7 @@ Commands:
   jobs list|get <id>|cancel <id> Inspect or cancel jobs
   projects list|get <id>         List or fetch projects
   published <slug>               Get published project metadata
+  download-published <slug>      Download mp4/srt/md from a published slug
   edit-in-descript --schema f    Partner-gated import URL exchange
   batch plan|run <manifest>      Bulk import/edit/publish
 

@@ -7,6 +7,7 @@ import { pollJob } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
+import { exportBatch } from "../../workflows/exportBatch.js";
 import { readFileSync } from "node:fs";
 import { emit, fail } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
@@ -44,6 +45,38 @@ function readJsonFile(ctx, path) {
         fail(ctx.io, `Could not read JSON from "${path}": ${e instanceof Error ? e.message : String(e)}`);
         return undefined;
     }
+}
+const FORMAT_VALUES = ["mp4", "srt", "md"];
+function parseFormats(ctx, raw, fallback) {
+    if (raw === undefined)
+        return fallback;
+    const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    for (const p of parts) {
+        if (!FORMAT_VALUES.includes(p)) {
+            fail(ctx.io, `--formats must be a comma-separated subset of: ${FORMAT_VALUES.join(", ")} (got "${p}")`);
+            return null;
+        }
+    }
+    // Dedup while preserving order
+    const seen = new Set();
+    const out = [];
+    for (const p of parts) {
+        if (!seen.has(p)) {
+            seen.add(p);
+            out.push(p);
+        }
+    }
+    return out;
+}
+function parseConcurrency(ctx, raw, fallback) {
+    if (raw === undefined)
+        return fallback;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1) {
+        fail(ctx.io, `--concurrency must be a positive integer (got "${raw}")`);
+        return null;
+    }
+    return n;
 }
 export const COMMANDS = {
     async status(ctx) {
@@ -238,6 +271,63 @@ export const COMMANDS = {
         const r = await c.getPublishedProjectMetadata(slug);
         emit(ctx.io, `Published ${r.publish_type} (${r.privacy})`, r);
         return 0;
+    },
+    async "download-published"(ctx) {
+        const c = client(ctx);
+        const formats = parseFormats(ctx, typeof ctx.flags.formats === "string" ? ctx.flags.formats : undefined, ["mp4", "srt", "md"]);
+        if (formats === null)
+            return 2;
+        const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 2);
+        if (concurrency === null)
+            return 2;
+        const outputDir = typeof ctx.flags["output-dir"] === "string" ? ctx.flags["output-dir"] : ".";
+        const endMarker = ctx.flags["no-end-marker"] !== true;
+        // Resolve slugs.
+        let slugs = [];
+        const positional = ctx.args[0];
+        const slugsFlag = typeof ctx.flags.slugs === "string" ? ctx.flags.slugs : undefined;
+        const reportFlag = typeof ctx.flags.report === "string" ? ctx.flags.report : undefined;
+        const sourcesUsed = [positional, slugsFlag, reportFlag].filter((v) => v !== undefined).length;
+        if (sourcesUsed === 0) {
+            fail(ctx.io, "Usage: descript download-published <slug> | --slugs s1,s2 | --report <path>");
+            return 2;
+        }
+        if (sourcesUsed > 1) {
+            fail(ctx.io, "Provide exactly one of <slug>, --slugs, or --report");
+            return 2;
+        }
+        if (positional) {
+            slugs = [positional];
+        }
+        else if (slugsFlag) {
+            slugs = slugsFlag.split(",").map((s) => s.trim()).filter(Boolean);
+            if (slugs.length === 0) {
+                fail(ctx.io, "--slugs must be a non-empty comma-separated list");
+                return 2;
+            }
+        }
+        else if (reportFlag) {
+            const raw = readJsonFile(ctx, reportFlag);
+            if (raw === undefined)
+                return 2;
+            const r = raw;
+            if (!Array.isArray(r.items)) {
+                fail(ctx.io, `--report file does not look like an export-report.json (missing items array)`);
+                return 2;
+            }
+            slugs = r.items.map((i) => i.slug).filter((s) => typeof s === "string" && s.length > 0);
+            if (slugs.length === 0) {
+                fail(ctx.io, `--report file contained no slugs`);
+                return 2;
+            }
+        }
+        const report = await exportBatch(c, {
+            items: slugs.map((slug) => ({ slug })),
+            outputDir, formats, endMarker, concurrency,
+            command: "download-published"
+        });
+        emit(ctx.io, `Downloaded ${report.items.filter((i) => i.ok).length}/${report.items.length} item(s)`, report);
+        return report.ok ? 0 : 4;
     },
     async "edit-in-descript"(ctx) {
         const c = client(ctx);

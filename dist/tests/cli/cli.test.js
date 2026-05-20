@@ -2,7 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { runCli, parseArgv } from "../../src/cli/index.js";
 import { installMockFetch, restoreFetch, installNoNetwork } from "../helpers/mockFetch.js";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 afterEach(() => restoreFetch());
@@ -161,4 +161,33 @@ test("parseArgv supports --key=value including values starting with --", () => {
     assert.equal(r.command, "agent");
     assert.equal(r.flags.prompt, "--keep this literal");
     assert.equal(r.flags.json, true);
+});
+test("download-published <slug> writes files and exits 0", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-dlp-"));
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs.example/T.mp4?sig=abc",
+                project_id: "p", publish_type: "video", privacy: "private",
+                metadata: { title: "T" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nA: hi.\n"
+            }
+        },
+        { status: 200, text: "mp4-bytes" }
+    ]);
+    const out = [];
+    const code = await runCli(["download-published", "abc-123", "--output-dir", dir, "--formats", "mp4,srt,md", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(existsSync(join(dir, "T", "T.mp4")));
+    assert.ok(existsSync(join(dir, "T", "T.srt")));
+    assert.ok(existsSync(join(dir, "T", "T.md")));
+    assert.ok(existsSync(join(dir, "download-report.json")));
+    assert.match(out.join(""), /"ok": ?true/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("download-published without any slug or --slugs or --report exits 2", async () => {
+    const out = [];
+    const code = await runCli(["download-published"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.match(out.join(""), /slug|Usage/);
 });
