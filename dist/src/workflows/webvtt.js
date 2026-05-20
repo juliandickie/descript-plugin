@@ -47,3 +47,44 @@ export function toSrt(cues) {
     })
         .join("\n\n") + "\n";
 }
+const SPEAKER_RE = /^([A-Z][\p{L}\s.'\-_0-9]+?):\s+/u;
+function truncTimecode(vttTs) {
+    const dot = vttTs.indexOf(".");
+    return dot === -1 ? vttTs : vttTs.slice(0, dot);
+}
+export function toMd(cues, title, opts) {
+    const out = [];
+    out.push(`# ${title}`);
+    out.push("");
+    let currentSpeaker = null;
+    for (const cue of cues) {
+        let body = cue.text.replace(/\n/g, " ").replace(/\s+/g, " ").trim();
+        let speakerForThisPara = null;
+        const m = body.match(SPEAKER_RE);
+        if (m) {
+            const detected = (m[1] ?? "").trim();
+            body = body.slice(m[0].length);
+            if (detected !== currentSpeaker) {
+                speakerForThisPara = detected;
+                currentSpeaker = detected;
+            }
+        }
+        const ts = truncTimecode(cue.start);
+        const prefix = speakerForThisPara
+            ? `[${ts}] **${speakerForThisPara}:** `
+            : `[${ts}] `;
+        out.push(`${prefix}${body} `);
+        out.push("");
+    }
+    if (opts.endMarker && cues.length > 0) {
+        const lastCue = cues[cues.length - 1];
+        const lastEnd = truncTimecode(lastCue.end);
+        out.push(`[${lastEnd}] END`);
+    }
+    // Remove trailing empty strings to avoid a double-newline at end,
+    // but preserve a trailing blank line when endMarker is used.
+    while (out.length > 0 && out[out.length - 1] === "") {
+        out.pop();
+    }
+    return out.join("\n") + "\n";
+}

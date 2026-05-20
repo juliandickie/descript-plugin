@@ -76,3 +76,50 @@ test("toSrt preserves multi-line cue text verbatim", () => {
 test("toSrt returns just a trailing newline for empty input", () => {
     assert.equal(toSrt([]), "\n");
 });
+import { toMd } from "../../src/workflows/webvtt.js";
+test("toMd renders H1 title, per-cue paragraphs, speaker on change, END marker", () => {
+    const cues = [
+        { start: "00:00:00.000", end: "00:00:02.400", text: "Ben Sorensen: First cue text." },
+        { start: "00:00:02.400", end: "00:00:05.800", text: "Same speaker, second cue." },
+        { start: "00:00:05.800", end: "00:00:08.000", text: "Alice Jones: Speaker changed here." }
+    ];
+    const md = toMd(cues, "My Test Title", { endMarker: true });
+    const expected = "# My Test Title\n" +
+        "\n" +
+        "[00:00:00] **Ben Sorensen:** First cue text. \n" +
+        "\n" +
+        "[00:00:02] Same speaker, second cue. \n" +
+        "\n" +
+        "[00:00:05] **Alice Jones:** Speaker changed here. \n" +
+        "\n" +
+        "[00:00:08] END\n";
+    assert.equal(md, expected);
+});
+test("toMd with endMarker false omits the END line entirely", () => {
+    const cues = [
+        { start: "00:00:00.000", end: "00:00:02.000", text: "Ben: hello." }
+    ];
+    const md = toMd(cues, "T", { endMarker: false });
+    const expected = "# T\n" +
+        "\n" +
+        "[00:00:00] **Ben:** hello. \n";
+    assert.equal(md, expected);
+});
+test("toMd handles empty cues with just the H1 and newline", () => {
+    const md = toMd([], "Empty", { endMarker: true });
+    assert.equal(md, "# Empty\n");
+});
+test("toMd timestamp truncates, never rounds", () => {
+    const cues = [{ start: "00:00:01.999", end: "00:00:02.999", text: "Speaker: x." }];
+    const md = toMd(cues, "T", { endMarker: false });
+    assert.match(md, /\[00:00:01\] /);
+});
+test("toMd detects hyphenated, apostrophed, period-containing speaker names", () => {
+    const cues = [
+        { start: "00:00:00.000", end: "00:00:01.000", text: "Dr. Jane Smith-Brown: hello." },
+        { start: "00:00:01.000", end: "00:00:02.000", text: "ID Speaker_1: world." }
+    ];
+    const md = toMd(cues, "T", { endMarker: false });
+    assert.match(md, /\*\*Dr\. Jane Smith-Brown:\*\* hello\./);
+    assert.match(md, /\*\*ID Speaker_1:\*\* world\./);
+});
