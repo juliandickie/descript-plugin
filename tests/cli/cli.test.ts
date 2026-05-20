@@ -231,3 +231,57 @@ test("download-published without any slug or --slugs or --report exits 2", async
   assert.equal(code, 2);
   assert.match(out.join(""), /slug|Usage/);
 });
+
+test("download-published --slugs s1,s2 fans out", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-dlp-"));
+  installMockFetch([
+    { status: 200, json: { download_url: "https://gcs/A.mp4?s=1", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "A" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+    { status: 200, text: "A" },
+    { status: 200, json: { download_url: "https://gcs/B.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "B" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\ny.\n" } },
+    { status: 200, text: "B" }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["download-published", "--slugs", "a,b", "--output-dir", dir, "--formats", "mp4", "--concurrency", "1", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 0);
+  assert.ok(existsSync(join(dir, "A", "A.mp4")));
+  assert.ok(existsSync(join(dir, "B", "B.mp4")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("download-published --report reads slugs from a prior export-report.json", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-dlp-"));
+  const reportPath = join(dir, "export-report.json");
+  writeFileSync(reportPath, JSON.stringify({
+    ok: true, command: "export",
+    items: [
+      { slug: "abc", ok: true, title: "T1", outputDir: ".", written: ["mp4"], failed: [] },
+      { slug: "def", ok: true, title: "T2", outputDir: ".", written: ["mp4"], failed: [] }
+    ]
+  }));
+  installMockFetch([
+    { status: 200, json: { download_url: "https://gcs/T1.mp4?s=1", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "T1" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+    { status: 200, json: { download_url: "https://gcs/T2.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "T2" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\ny.\n" } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["download-published", "--report", reportPath, "--output-dir", dir, "--formats", "md", "--concurrency", "1", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 0);
+  assert.ok(existsSync(join(dir, "T1", "T1.md")));
+  assert.ok(existsSync(join(dir, "T2", "T2.md")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("download-published with two slug sources (positional + --slugs) exits 2", async () => {
+  const out: string[] = [];
+  const code = await runCli(
+    ["download-published", "abc", "--slugs", "def"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.match(out.join(""), /exactly one/);
+});
