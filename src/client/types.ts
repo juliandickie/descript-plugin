@@ -53,7 +53,7 @@ export interface PublishRequest {
   composition_id?: string;
   media_type?: "Video" | "Audio";
   resolution?: "480p" | "720p" | "1080p" | "1440p" | "4K";
-  access_level?: "public" | "unlisted" | "drive" | "private";
+  access_level?: "public" | "unlisted" | "private";
   callback_url?: string;
 }
 

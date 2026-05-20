@@ -149,6 +149,18 @@ test("publish rejects an invalid --resolution locally without calling the API", 
   assert.match(out.join(""), /resolution must be one of/);
 });
 
+test("publish rejects --access-level drive locally (not a real Descript access level)", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: {} }]);
+  const out: string[] = [];
+  const code = await runCli(["publish", "--project-id", "p", "--access-level", "drive", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(out.join(""), /access-level must be one of/);
+  // The error must enumerate only the three real Descript values, not include 'drive'.
+  assert.doesNotMatch(out.join(""), /drive/);
+});
+
 test("agent rejects a valueless --prompt without spending credits", async () => {
   const { calls } = installMockFetch([{ status: 201, json: {} }]);
   const out: string[] = [];

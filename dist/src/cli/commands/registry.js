@@ -23,7 +23,7 @@ const noWait = (ctx) => ctx.flags["no-wait"] === true;
 const TEAM_ACCESS = ["edit", "comment", "view", "none"];
 const MEDIA_TYPE = ["Video", "Audio"];
 const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"];
-const ACCESS_LEVEL = ["public", "unlisted", "drive", "private"];
+const ACCESS_LEVEL = ["public", "unlisted", "private"];
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx, flag, allowed) {
     const v = ctx.flags[flag];

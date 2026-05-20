@@ -35,7 +35,7 @@ const noWait = (ctx: Ctx) => ctx.flags["no-wait"] === true;
 const TEAM_ACCESS = ["edit", "comment", "view", "none"] as const;
 const MEDIA_TYPE = ["Video", "Audio"] as const;
 const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"] as const;
-const ACCESS_LEVEL = ["public", "unlisted", "drive", "private"] as const;
+const ACCESS_LEVEL = ["public", "unlisted", "private"] as const;
 
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx: Ctx, flag: string, allowed: readonly string[]): boolean {
@@ -156,7 +156,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
       media_type: (ctx.flags["media-type"] as "Video" | "Audio") || undefined,
       resolution: (ctx.flags.resolution as "480p" | "720p" | "1080p" | "1440p" | "4K") || undefined,
-      access_level: (ctx.flags["access-level"] as "public" | "unlisted" | "drive" | "private") || undefined,
+      access_level: (ctx.flags["access-level"] as "public" | "unlisted" | "private") || undefined,
       ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {})
     };
     if (noWait(ctx)) { const s = await c.publishJob(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
