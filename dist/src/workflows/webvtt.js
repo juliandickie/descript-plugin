@@ -47,6 +47,15 @@ export function toSrt(cues) {
     })
         .join("\n\n") + "\n";
 }
+// SPEAKER_RE is a direct port of the working Descript-converter production script (field report §5).
+// It is tuned to Descript's speaker-diarisation output format, which always emits speaker labels as
+// "FirstName LastName: ..." (or single names, names with initials, etc.).
+//
+// Known false-positive risk: any cue body that begins with a capitalised word followed by a colon
+// and a space will be matched as a speaker, e.g. "Time: 5:00", "Note: see below", "Q: who's there?".
+// This is bounded in practice because the only input source is Descript's API, whose diarisation
+// output does not produce those patterns. If transcripts from other sources are ever fed in, tighten
+// the regex, e.g. require 2+ chars before the colon, or require the prefix to contain no digits.
 const SPEAKER_RE = /^([A-Z][\p{L}\s.'\-_0-9]+?):\s+/u;
 function truncTimecode(vttTs) {
     const dot = vttTs.indexOf(".");
@@ -81,8 +90,10 @@ export function toMd(cues, title, opts) {
         const lastEnd = truncTimecode(lastCue.end);
         out.push(`[${lastEnd}] END`);
     }
-    // Remove trailing empty strings to avoid a double-newline at end,
-    // but preserve a trailing blank line when endMarker is used.
+    // Strip any trailing blank lines pushed by the cue loop so the output
+    // ends with exactly one newline (added by the final join + "\n").
+    // When endMarker is true the last push is "[ts] END" (non-empty), so
+    // it is unaffected by this loop.
     while (out.length > 0 && out[out.length - 1] === "") {
         out.pop();
     }
