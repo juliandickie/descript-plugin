@@ -1,6 +1,6 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DescriptClient } from "../../src/client/index.js";
@@ -92,5 +92,99 @@ test("mkdir failure surfaces as a per-format failed result (not a thrown excepti
   assert.equal(result.written.length, 0);
   assert.equal(result.failed.length, 3); // all three formats failed
   assert.match(result.failed[0]!.error, /mkdir failed/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("--formats md,srt skips MP4 entirely (no curl call)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  const { calls } = installMockFetch([
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/x.mp4?sig=abc",
+        project_id: "p", publish_type: "video", privacy: "private",
+        metadata: { title: "X" }, subtitles: SAMPLE_VTT
+      }
+    }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["md", "srt"], endMarker: false
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.written, ["md", "srt"]);
+  assert.equal(calls.length, 1, "no MP4 curl");
+  assert.ok(!existsSync(join(dir, "X", "X.mp4")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("audio publish writes .mp3 derived from URL", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  installMockFetch([
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/episode-47.mp3?sig=abc",
+        project_id: "p", publish_type: "audio", privacy: "private",
+        metadata: { title: "Episode 47" }, subtitles: SAMPLE_VTT
+      }
+    },
+    { status: 200, text: "mp3-bytes" }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["mp4"], endMarker: false
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.written, ["mp4"]);
+  assert.ok(existsSync(join(dir, "Episode 47", "Episode 47.mp3")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("audio publish with no URL extension falls back to publish_type", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  installMockFetch([
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/abc?sig=def",
+        project_id: "p", publish_type: "audio", privacy: "private",
+        metadata: { title: "Pod" }, subtitles: SAMPLE_VTT
+      }
+    },
+    { status: 200, text: "audio-bytes" }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["mp4"], endMarker: false
+  });
+  assert.ok(existsSync(join(dir, "Pod", "Pod.mp3")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("unlinks pre-existing .partial from prior interrupted run", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  const compDir = join(dir, "T");
+  mkdirSync(compDir, { recursive: true });
+  writeFileSync(join(compDir, "T.mp4.partial"), "stale-bytes");
+
+  installMockFetch([
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/T.mp4?sig=abc",
+        project_id: "p", publish_type: "video", privacy: "private",
+        metadata: { title: "T" }, subtitles: SAMPLE_VTT
+      }
+    },
+    { status: 200, text: "new-bytes" }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["mp4"], endMarker: false
+  });
+  assert.equal(result.ok, true);
+  assert.equal(readFileSync(join(compDir, "T.mp4"), "utf8"), "new-bytes");
+  assert.ok(!existsSync(join(compDir, "T.mp4.partial")));
   rmSync(dir, { recursive: true, force: true });
 });
