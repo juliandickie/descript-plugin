@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseVtt } from "../../src/workflows/webvtt.js";
+import { parseVtt, toSrt } from "../../src/workflows/webvtt.js";
 
 const SAMPLE_VTT = `WEBVTT
 
@@ -60,4 +60,31 @@ Cue with settings.
   const c = cues[0];
   assert.ok(c !== undefined);
   assert.equal(c.text, "Cue with settings.");
+});
+
+test("toSrt numbers cues starting at 1 and uses comma millis", () => {
+  const cues = [
+    { start: "00:00:00.000", end: "00:00:02.400", text: "First." },
+    { start: "00:00:02.400", end: "00:00:05.800", text: "Second." }
+  ];
+  const srt = toSrt(cues);
+  assert.equal(srt,
+    "1\n" +
+    "00:00:00,000 --> 00:00:02,400\n" +
+    "First.\n" +
+    "\n" +
+    "2\n" +
+    "00:00:02,400 --> 00:00:05,800\n" +
+    "Second.\n"
+  );
+});
+
+test("toSrt preserves multi-line cue text verbatim", () => {
+  const cues = [{ start: "00:00:00.000", end: "00:00:02.000", text: "Line 1.\nLine 2." }];
+  const srt = toSrt(cues);
+  assert.match(srt, /^1\n00:00:00,000 --> 00:00:02,000\nLine 1\.\nLine 2\.\n$/);
+});
+
+test("toSrt returns just a trailing newline for empty input", () => {
+  assert.equal(toSrt([]), "\n");
 });

@@ -36,3 +36,14 @@ export function parseVtt(content) {
     }
     return cues;
 }
+export function toSrt(cues) {
+    if (cues.length === 0)
+        return "\n";
+    return cues
+        .map((c, idx) => {
+        const start = c.start.replace(".", ",");
+        const end = c.end.replace(".", ",");
+        return `${idx + 1}\n${start} --> ${end}\n${c.text}`;
+    })
+        .join("\n\n") + "\n";
+}
