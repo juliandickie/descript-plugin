@@ -84,17 +84,23 @@ A job is done when `job_state === "stopped"`. Then `result.status` is `success` 
 
 Bearer token, Drive-scoped. Resolution order - `--token` flag, `DESCRIPT_API_TOKEN` env, config-file profile, plugin `api_token` user-config.
 
-## Cost annotations (which CLI calls spend credits or create artifacts)
+## Cost and gate annotations (which CLI calls spend credits, create artifacts, or carry operator-only gates)
 
-- `agent` - billable per call. Spends AI credits and media seconds. Always disclose and confirm.
+Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy.md`):
 
-- `publish` - not billable on standard plans, but creates a hosted share URL. Risk-bearing for any access level above `private`.
+- `agent` (skill - `descript-edit`) - billable per call. Spends AI credits and media seconds. Model-invocable with in-skill confirmation. Always disclose cost and confirm.
 
-- `batch` - conditionally billable (only when manifest items include `agent_prompt`). Always risk-bearing for bulk-write blast radius.
+- `publish` (skill - `descript-publish`) - not billable on standard plans, but creates a hosted share URL. Model-invocable with in-skill confirmation that defaults access-level to `private`. Elevation to `unlisted` or `public` requires affirmative user language.
 
-- `export` - triggers one publish per composition. Same risk profile as `publish`, multiplied. Confirm scope before invoking.
+- `batch` (skill - `descript-batch`) - conditionally billable (only when manifest items include `agent_prompt`). Always risk-bearing for bulk-write blast radius. **Operator-only via `disable-model-invocation: true`.** The CLI's mandatory `batch plan` then `batch run --confirm` dance is the load-bearing safety.
 
-- Everything else (`status`, `config`, `import`, `jobs list/get/cancel`, `projects list/get`, `published`, `download-published`, `edit-in-descript`) is read-only or non-billable.
+- `export` (skill - `descript-export`) - triggers one publish per composition. Same risk profile as `publish`, multiplied. Model-invocable with in-skill confirmation; defaults access-level to `private`.
+
+- `download-published` (skill - `descript-download-published`) - read-only, free, unrestricted.
+
+- Everything else (`status`, `config`, `import`, `jobs list/get/cancel`, `projects list/get`, `published`, `edit-in-descript`) is read-only or non-billable, unrestricted.
+
+Contributor rule of thumb - operator-gate any skill whose blast radius extends beyond a single composition, or that can spend AI credits transitively via `agent_prompt` items.
 
 ## Help-docs index
 

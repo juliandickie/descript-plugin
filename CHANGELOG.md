@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3 - 2026-05-20
+
+Documentary-only release implementing the Stream B model-invocation policy decision (`docs/specs/2026-05-20-model-invocation-policy.md`). Closes the deferred question from the v0.3.0 followup field report §5.4 and the original v0.2.0 §3.6 complaint about the publish skill's gate being "over-defensive". No source code or test changes; `dist/` produces no behavioural diff.
+
+- **`skills/descript-publish/SKILL.md` is now model-invocable.** `disable-model-invocation: true` removed from frontmatter. Confirmation pattern matches `descript-edit` and `descript-export`. Single-composition publishes are now reachable conversationally instead of via Bash-only, resolving the long-standing asymmetry where `descript-export` (which wraps publish) was model-invocable but `descript-publish` itself was not.
+
+- **Publish defaults the access-level confirmation to `private`.** The confirmation step explicitly defaults to `--access-level private`; elevation to `unlisted` or `public` requires affirmative user language. This mirrors the existing default-private posture in `descript-export` and bounds the model-invocable path's blast radius (no external leakage at private).
+
+- **`skills/descript-batch/SKILL.md` stays operator-only** via `disable-model-invocation: true`. Batch's blast radius (bulk write across many compositions, possible AI-credit billing via `agent_prompt` items) is categorically different from a single publish. The CLI's `batch plan` then `batch run --confirm` dance is the load-bearing safety mechanism; the skill flag is the honest signal of risk class.
+
+- **Root `AGENTS.md`, `CLAUDE.md`, and `skills/descript-api-reference/SKILL.md` updated** to reflect the new gate matrix. New contributor rule of thumb - "Operator-gate any skill whose blast radius extends beyond a single composition, or that can spend AI credits transitively via `agent_prompt` items."
+
 ## 0.3.2 - 2026-05-20
 
 Correctness backlog from the v0.3.0 followup field report (§2.1, §2.2, §2.3, §2.4, §3.1, §3.2). No CLI surface changes, no breaking changes. Bug fixes plus regression tests for previously-undocumented invariants.
