@@ -76,7 +76,8 @@ async function main(): Promise<void> {
   // endpoint does not currently expose per-composition slugs, so we publish
   // each comp once at the start to obtain slugs. (This is the warmup cost
   // of the smoke run.)
-  console.error(`Warming up: publishing ${comps.length} compositions to obtain slugs...`);
+  const warmupCount = Math.min(5, comps.length);
+  console.error(`Warming up: publishing ${warmupCount} of ${comps.length} compositions to obtain slugs...`);
   const slugs: string[] = [];
   for (const cc of comps.slice(0, 5)) {
     const out = await client.publishJob({

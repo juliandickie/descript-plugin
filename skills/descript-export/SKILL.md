@@ -29,7 +29,7 @@ End-to-end pipeline: publish a composition (or many), download the rendered medi
      --formats <list> \
      --output-dir <path> \
      --access-level private \
-     --concurrency 2 \
+     --concurrency 5 \
      [--composition-ids id1,id2] \
      [--no-end-marker] \
      [--profile <name>] \

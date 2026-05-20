@@ -278,7 +278,7 @@ export const COMMANDS = {
         const formats = parseFormats(ctx, typeof ctx.flags.formats === "string" ? ctx.flags.formats : undefined, ["mp4", "srt", "md"]);
         if (formats === null)
             return 2;
-        const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 2);
+        const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 5);
         if (concurrency === null)
             return 2;
         const outputDir = typeof ctx.flags["output-dir"] === "string" ? ctx.flags["output-dir"] : ".";
@@ -349,7 +349,7 @@ export const COMMANDS = {
         const formats = parseFormats(ctx, typeof ctx.flags.formats === "string" ? ctx.flags.formats : undefined, ["mp4", "srt", "md"]);
         if (formats === null)
             return 2;
-        const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 2);
+        const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 5);
         if (concurrency === null)
             return 2;
         if (badEnum(ctx, "media-type", MEDIA_TYPE))
