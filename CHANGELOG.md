@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 - 2026-05-20
+- New `descript export <project-id> [composition-id]` command. Publishes one or many compositions (single composition, all compositions in a project, or fan-out across multiple projects via `--projects pid1,pid2`), then downloads the rendered media and writes SRT and Markdown transcripts from the WebVTT subtitles. The Markdown matches the field report's Section 5 format (per-cue paragraphs, `[HH:MM:SS]` timestamps, speaker label on speaker change, optional `[HH:MM:SS] END` marker via the default).
+
+- New `descript download-published <slug>` command. Read-only companion that re-fetches the deliverables for a previously-published composition. Accepts a single slug, `--slugs s1,s2,...`, or `--report <path>` to read slugs back from a prior `export-report.json`. No publish, no API write, no cost. Right entry point for chapter-generation iteration.
+
+- Every run writes `<output-dir>/export-report.json` or `download-report.json` containing per-item slugs, titles, output paths, written formats, and failed formats. Single-composition runs produce the same report shape as multi-composition runs so the closed loop with `--report` works uniformly.
+
+- `--formats mp4,srt,md` flag (default all three). Skip formats to save time and disk - `--formats md` for chapter-gen iteration skips the MP4 download entirely. `--no-end-marker` omits the `[HH:MM:SS] END` line from Markdown for human-readable transcript use cases.
+
+- `--concurrency N` flag with default 5, set empirically via the new `npm run smoke:concurrency` dev script (read-mode smoke against the iDD test project cleared 1, 2, 3, 5, 7, 10 with zero 429s; bottleneck above 5 is server latency, not rate-limit). Per-item failures isolate; the batch keeps going and the report identifies what failed.
+
+- Filename and folder sanitisation per the project's Drive-sync rules - drops `< > ? # % * : |`, replaces `&` with "and", `/` and `\` with `-`, normalises curly quotes to straight, drops trademark glyphs, truncates to 200 chars. Empty-after-sanitise falls back to `untitled`.
+
+- Two new skills - `descript-export` (model-invocable with mandatory in-skill confirmation, matching the `descript-edit` pattern) and `descript-download-published` (read-only and unrestricted).
+
+- New `npm run smoke:concurrency` dev script for empirically discovering Descript's rate-limit ceiling. Excluded from `npm test` and CI.
+
 ## 0.2.1 - 2026-05-20
 - Removed `drive` from the `--access-level` enum on `descript publish` and from the batch manifest's `publish.access_level` type. The value was rejected by the Descript API on every Drive tested (the API allows only `public`, `unlisted`, `private`) and Descript's web UI exposes only those three options. The CLI now fails fast at parse time with a clear error instead of after a network round-trip.
 
