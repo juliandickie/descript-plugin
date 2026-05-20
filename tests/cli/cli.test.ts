@@ -285,3 +285,39 @@ test("download-published with two slug sources (positional + --slugs) exits 2", 
   assert.equal(code, 2);
   assert.match(out.join(""), /exactly one/);
 });
+
+test("export PID CID publishes and downloads in one go", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-cli-"));
+  installMockFetch([
+    // publish submit
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+    // publish job result
+    {
+      status: 200, json: {
+        job_id: "j", job_type: "publish", job_state: "stopped", created_at: "t",
+        drive_id: "d", project_id: "p", project_url: "u",
+        result: {
+          status: "success",
+          share_url: "https://web.descript.com/p/view/slug-1",
+          download_url: "https://gcs/X.mp4?s=1",
+          download_url_expires_at: "2026-05-21T00:00:00Z"
+        }
+      }
+    },
+    // metadata
+    { status: 200, json: { download_url: "https://gcs/X.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "X" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+    // curl
+    { status: 200, text: "X-bytes" }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "c", "--output-dir", dir, "--formats", "mp4,srt,md", "--access-level", "private", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 0);
+  assert.ok(existsSync(join(dir, "X", "X.mp4")));
+  assert.ok(existsSync(join(dir, "X", "X.srt")));
+  assert.ok(existsSync(join(dir, "X", "X.md")));
+  assert.ok(existsSync(join(dir, "export-report.json")));
+  rmSync(dir, { recursive: true, force: true });
+});

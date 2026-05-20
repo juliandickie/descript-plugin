@@ -291,6 +291,50 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     return 0;
   },
 
+  async export(ctx) {
+    const c = client(ctx);
+    const formats = parseFormats(ctx, typeof ctx.flags.formats === "string" ? ctx.flags.formats : undefined, ["mp4", "srt", "md"]);
+    if (formats === null) return 2;
+    const concurrency = parseConcurrency(ctx, typeof ctx.flags.concurrency === "string" ? ctx.flags.concurrency : undefined, 2);
+    if (concurrency === null) return 2;
+    if (badEnum(ctx, "media-type", MEDIA_TYPE)) return 2;
+    if (badEnum(ctx, "resolution", RESOLUTION)) return 2;
+    if (badEnum(ctx, "access-level", ACCESS_LEVEL)) return 2;
+    const outputDir = typeof ctx.flags["output-dir"] === "string" ? ctx.flags["output-dir"] : ".";
+    const endMarker = ctx.flags["no-end-marker"] !== true;
+    const mediaType = (ctx.flags["media-type"] as "Video" | "Audio") ?? "Video";
+    const resolution = (ctx.flags.resolution as "480p" | "720p" | "1080p" | "1440p" | "4K") ?? "1080p";
+    const accessLevel = (ctx.flags["access-level"] as "public" | "unlisted" | "private") ?? "private";
+
+    // Single-composition shape: descript export <PID> <CID>
+    const positionalPid = ctx.args[0];
+    const positionalCid = ctx.args[1];
+    const _projectsFlag = typeof ctx.flags.projects === "string" ? ctx.flags.projects : undefined;
+    const _compositionIdsFlag = typeof ctx.flags["composition-ids"] === "string" ? ctx.flags["composition-ids"] : undefined;
+
+    if (!positionalPid && !_projectsFlag) {
+      fail(ctx.io, "Usage: descript export <project-id> [composition-id] | --projects pid1,pid2");
+      return 2;
+    }
+
+    let items: Array<{ projectId: string; compositionId: string; projectFolder?: string }> = [];
+    if (positionalPid && positionalCid) {
+      items = [{ projectId: positionalPid, compositionId: positionalCid }];
+    } else {
+      // Path branches for PID-only and --projects are Task 15. For now, fail with a clear stub.
+      fail(ctx.io, "Multi-composition export is implemented in a follow-up task; pass <PID> <CID> for now");
+      return 2;
+    }
+
+    const report = await exportBatch(c, {
+      items, outputDir, formats, endMarker, concurrency,
+      command: "export",
+      publish: { mediaType, resolution, accessLevel }
+    });
+    emit(ctx.io, `Exported ${report.items.filter((i) => i.ok).length}/${report.items.length} item(s)`, report);
+    return report.ok ? 0 : 4;
+  },
+
   async batch(ctx) {
     const c = client(ctx);
     const sub = ctx.args[0];
