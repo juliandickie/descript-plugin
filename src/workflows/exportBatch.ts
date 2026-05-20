@@ -108,18 +108,31 @@ async function processOne(
     }
   }
 
-  const result = await exportPublished(client, {
-    slug: slug,
-    outputDir: opts.outputDir,
-    formats: opts.formats,
-    endMarker: opts.endMarker,
-    projectFolder: item.projectFolder
-  });
-  return {
-    ...result,
-    projectId: item.projectId,
-    compositionId: item.compositionId
-  };
+  try {
+    const result = await exportPublished(client, {
+      slug: slug,
+      outputDir: opts.outputDir,
+      formats: opts.formats,
+      endMarker: opts.endMarker,
+      projectFolder: item.projectFolder
+    });
+    return {
+      ...result,
+      projectId: item.projectId,
+      compositionId: item.compositionId
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      slug: slug ?? "",
+      title: "",
+      outputDir: "",
+      written: [],
+      failed: opts.formats.map((f) => ({ format: f, error: e instanceof Error ? e.message : String(e) })),
+      projectId: item.projectId,
+      compositionId: item.compositionId
+    };
+  }
 }
 
 async function runPool<T, R>(
