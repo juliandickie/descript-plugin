@@ -107,3 +107,25 @@ test("one item fails but others succeed; report.ok false, per-item ok accurate",
     assert.ok(report.items[1].failed.length >= 1);
     rmSync(dir, { recursive: true, force: true });
 });
+test("multi-project items use projectFolder for two-level nesting", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-batch-"));
+    installMockFetch([
+        { status: 200, json: { download_url: "https://gcs/X.mp4?s=1", project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "Comp A" }, subtitles: SAMPLE_VTT } },
+        { status: 200, text: "X" },
+        { status: 200, json: { download_url: "https://gcs/Y.mp4?s=2", project_id: "p2", publish_type: "video", privacy: "private", metadata: { title: "Comp B" }, subtitles: SAMPLE_VTT } },
+        { status: 200, text: "Y" }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const report = await exportBatch(client, {
+        items: [
+            { slug: "a", projectFolder: "Project One" },
+            { slug: "b", projectFolder: "Project Two" }
+        ],
+        outputDir: dir, formats: ["mp4"], endMarker: false, concurrency: 1,
+        command: "download-published"
+    });
+    assert.equal(report.ok, true);
+    assert.ok(existsSync(join(dir, "Project One", "Comp A", "Comp A.mp4")));
+    assert.ok(existsSync(join(dir, "Project Two", "Comp B", "Comp B.mp4")));
+    rmSync(dir, { recursive: true, force: true });
+});
