@@ -188,3 +188,53 @@ test("unlinks pre-existing .partial from prior interrupted run", async () => {
   assert.ok(!existsSync(join(compDir, "T.mp4.partial")));
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("partial failure: MP4 curl 503 keeps SRT and MD; reports mp4 failed; ok=false", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  installMockFetch([
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/X.mp4?sig=abc",
+        project_id: "p", publish_type: "video", privacy: "private",
+        metadata: { title: "X" }, subtitles: SAMPLE_VTT
+      }
+    },
+    { status: 503, text: "" }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["mp4", "srt", "md"], endMarker: false
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.written, ["srt", "md"]);
+  assert.equal(result.failed.length, 1);
+  assert.equal(result.failed[0]!.format, "mp4");
+  assert.match(result.failed[0]!.error, /503/);
+  assert.ok(existsSync(join(dir, "X", "X.srt")));
+  assert.ok(existsSync(join(dir, "X", "X.md")));
+  assert.ok(!existsSync(join(dir, "X", "X.mp4")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("metadata has no download_url then mp4 fails but srt and md still write", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-exp-"));
+  installMockFetch([
+    {
+      status: 200,
+      json: {
+        project_id: "p", publish_type: "video", privacy: "private",
+        metadata: { title: "T" }, subtitles: SAMPLE_VTT
+      }
+    }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const result = await exportPublished(client, {
+    slug: "s", outputDir: dir, formats: ["mp4", "srt", "md"], endMarker: false
+  });
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.written, ["srt", "md"]);
+  assert.equal(result.failed[0]!.format, "mp4");
+  assert.match(result.failed[0]!.error, /download_url/);
+  rmSync(dir, { recursive: true, force: true });
+});
