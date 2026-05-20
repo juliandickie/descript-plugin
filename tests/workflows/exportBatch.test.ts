@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DescriptClient } from "../../src/client/index.js";
-import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
+import { installMockFetch, installMockFetchByUrl, restoreFetch } from "../helpers/mockFetch.js";
 import { exportBatch } from "../../src/workflows/exportBatch.js";
 
 afterEach(() => restoreFetch());
@@ -114,6 +114,57 @@ test("one item fails but others succeed; report.ok false, per-item ok accurate",
   assert.equal(report.items[0]!.ok, true);
   assert.equal(report.items[1]!.ok, false);
   assert.ok(report.items[1]!.failed.length >= 1);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// concurrency>1 failure isolation: uses installMockFetchByUrl so that
+// responses are routed by slug regardless of worker interleaving order.
+// item "ok1" and "ok2" succeed; item "bad" hits a 404 on metadata.
+// With concurrency=2, the two workers race but each item's fate is
+// determined by its slug, not queue position.
+test("concurrency=2 failure isolation: failed item does not affect sibling items", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-batch-"));
+  installMockFetchByUrl([
+    {
+      match: "/published_projects/bad",
+      responses: [{ status: 404, json: { error: "not found", message: "slug not found" } }]
+    },
+    {
+      match: "gcs.example",
+      responses: [
+        { status: 200, text: "ok1-bytes" },
+        { status: 200, text: "ok2-bytes" }
+      ]
+    },
+    {
+      match: "/published_projects/",
+      responses: [
+        {
+          status: 200,
+          json: { download_url: "https://gcs.example/A.mp4?s=1", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "Ok1" }, subtitles: SAMPLE_VTT }
+        },
+        {
+          status: 200,
+          json: { download_url: "https://gcs.example/B.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "Ok2" }, subtitles: SAMPLE_VTT }
+        }
+      ]
+    }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const report = await exportBatch(client, {
+    items: [{ slug: "ok1" }, { slug: "bad" }, { slug: "ok2" }],
+    outputDir: dir, formats: ["mp4"], endMarker: false, concurrency: 2,
+    command: "download-published"
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.items.length, 3);
+  assert.equal(report.items[0]!.slug, "ok1");
+  assert.equal(report.items[0]!.ok, true);
+  assert.equal(report.items[1]!.slug, "bad");
+  assert.equal(report.items[1]!.ok, false);
+  assert.ok(report.items[1]!.failed.length >= 1);
+  assert.equal(report.items[2]!.slug, "ok2");
+  assert.equal(report.items[2]!.ok, true);
   rmSync(dir, { recursive: true, force: true });
 });
 
