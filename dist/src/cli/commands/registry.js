@@ -372,6 +372,10 @@ export const COMMANDS = {
             fail(ctx.io, "Usage: descript export <project-id> [composition-id] | --projects pid1,pid2");
             return 2;
         }
+        if (projectsFlag && compositionIdsFlag) {
+            fail(ctx.io, "--composition-ids is only valid with the <project-id> form, not --projects");
+            return 2;
+        }
         let items = [];
         if (positionalPid && positionalCid) {
             items = [{ projectId: positionalPid, compositionId: positionalCid }];

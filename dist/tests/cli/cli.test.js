@@ -303,3 +303,39 @@ test("export PID CID publishes and downloads in one go", async () => {
     assert.ok(existsSync(join(dir, "export-report.json")));
     rmSync(dir, { recursive: true, force: true });
 });
+test("export rejects --formats invalid locally without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--formats", "wav", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /formats must be a comma-separated subset/);
+});
+test("export rejects --concurrency 0", async () => {
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--concurrency", "0", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.match(out.join(""), /concurrency must be a positive integer/);
+});
+test("export rejects --concurrency negative", async () => {
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--concurrency", "-1", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+});
+test("export rejects --concurrency non-numeric", async () => {
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--concurrency", "abc", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+});
+test("export still rejects --access-level drive (v0.2.1 carry-forward)", async () => {
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--access-level", "drive", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.match(out.join(""), /access-level must be one of/);
+});
+test("export --projects with --composition-ids exits 2 (mutually exclusive)", async () => {
+    const out = [];
+    const code = await runCli(["export", "--projects", "p1,p2", "--composition-ids", "c1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.match(out.join(""), /only valid with the <project-id> form/);
+});

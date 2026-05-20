@@ -318,6 +318,11 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       return 2;
     }
 
+    if (projectsFlag && compositionIdsFlag) {
+      fail(ctx.io, "--composition-ids is only valid with the <project-id> form, not --projects");
+      return 2;
+    }
+
     let items: Array<{ projectId: string; compositionId: string; projectFolder?: string }> = [];
     if (positionalPid && positionalCid) {
       items = [{ projectId: positionalPid, compositionId: positionalCid }];
