@@ -2,7 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { runCli, parseArgv } from "../../src/cli/index.js";
 import { installMockFetch, restoreFetch, installNoNetwork } from "../helpers/mockFetch.js";
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -426,4 +426,124 @@ test("export --projects with --composition-ids exits 2 (mutually exclusive)", as
   );
   assert.equal(code, 2);
   assert.match(out.join(""), /only valid with the <project-id> form/);
+});
+
+test("export rejects empty --formats value at parse time (v0.3.0 followup §2.4)", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: {} }]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "c", "--formats", "", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(out.join(""), /--formats must include at least one of/);
+});
+
+test("export rejects whitespace-and-comma-only --formats at parse time", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: {} }]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "c", "--formats", " , , ", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.equal(calls.length, 0);
+  assert.match(out.join(""), /--formats must include at least one of/);
+});
+
+// End-to-end round-trip test for v0.3.0 followup §3.1.
+// Locks the JSON contract between `descript export` (writes export-report.json)
+// and `descript download-published --report` (reads it back). A future schema
+// change to the report file that breaks the round-trip will be caught here.
+test("export then download-published --report round-trips against the same temp dir", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-round-trip-"));
+  // 4 fetches total. Steps 1-3 are the export (publish submit, publish poll, metadata).
+  // Step 4 is the download-published --report call (metadata only; --formats md skips the mp4 curl).
+  installMockFetch([
+    // 1. POST /jobs/publish (publishAndWait submit)
+    { status: 201, json: { job_id: "rt-job", drive_id: "d", project_id: "rt-proj", project_url: "u" } },
+    // 2. GET /jobs/rt-job (publishAndWait poll, returns stopped + share_url)
+    {
+      status: 200,
+      json: {
+        job_id: "rt-job", job_type: "publish", job_state: "stopped", created_at: "t",
+        drive_id: "d", project_id: "rt-proj", project_url: "u",
+        result: {
+          status: "success",
+          share_url: "https://web.descript.com/rt-proj/view/round-trip-slug",
+          download_url: "https://gcs.example/RT.mp4?s=publish",
+          download_url_expires_at: "2026-05-21T00:00:00Z"
+        }
+      }
+    },
+    // 3. GET /published_projects/round-trip-slug (export metadata)
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/RT.mp4?s=meta", project_id: "rt-proj",
+        publish_type: "video", privacy: "private",
+        metadata: { title: "Round Trip" },
+        subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nA: hello.\n"
+      }
+    },
+    // 4. GET /published_projects/round-trip-slug (download-published --report, --formats md)
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs.example/RT.mp4?s=rerun", project_id: "rt-proj",
+        publish_type: "video", privacy: "private",
+        metadata: { title: "Round Trip" },
+        subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nA: hello.\n"
+      }
+    }
+  ]);
+  const out: string[] = [];
+
+  // Step 1 - export. Use --formats md to keep the mock queue small (no mp4 curl).
+  const exportCode = await runCli(
+    ["export", "rt-proj", "rt-comp", "--output-dir", dir, "--formats", "md", "--access-level", "private", "--concurrency", "1", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(exportCode, 0);
+
+  // Acceptance criterion 1 - export report file exists at <tmp>/export-report.json
+  const exportReportPath = join(dir, "export-report.json");
+  assert.ok(existsSync(exportReportPath), "export-report.json must exist after export");
+
+  // Acceptance criterion 2 - report's items[0].slug is a non-empty string
+  const exportReport = JSON.parse(readFileSync(exportReportPath, "utf8"));
+  assert.equal(exportReport.ok, true);
+  assert.equal(exportReport.command, "export");
+  assert.ok(Array.isArray(exportReport.items) && exportReport.items.length === 1);
+  const exportSlug = exportReport.items[0].slug;
+  assert.ok(typeof exportSlug === "string" && exportSlug.length > 0, "exported item must carry a non-empty slug");
+  assert.equal(exportSlug, "round-trip-slug");
+
+  // Step 2 - download-published --report. Reads slugs back from the export report.
+  const dlCode = await runCli(
+    ["download-published", "--report", exportReportPath, "--output-dir", dir, "--formats", "md", "--concurrency", "1", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(dlCode, 0);
+
+  // Acceptance criterion 3 - download-published produced the expected transcript file
+  assert.ok(existsSync(join(dir, "Round Trip", "Round Trip.md")), "download-published must produce the md transcript using the slug from the export report");
+
+  // Acceptance criterion 4 - download-report.json has the same item shape as export-report.json
+  const dlReportPath = join(dir, "download-report.json");
+  assert.ok(existsSync(dlReportPath));
+  const dlReport = JSON.parse(readFileSync(dlReportPath, "utf8"));
+  assert.equal(dlReport.command, "download-published");
+  assert.equal(dlReport.ok, true);
+  assert.ok(Array.isArray(dlReport.items) && dlReport.items.length === 1);
+  // Same item shape - slug, ok, title, outputDir, written, failed all present.
+  const dlItem = dlReport.items[0];
+  assert.equal(dlItem.slug, exportSlug);
+  assert.equal(dlItem.ok, true);
+  assert.equal(dlItem.title, "Round Trip");
+  assert.ok(Array.isArray(dlItem.written) && dlItem.written.includes("md"));
+  assert.ok(Array.isArray(dlItem.failed));
+
+  rmSync(dir, { recursive: true, force: true });
 });

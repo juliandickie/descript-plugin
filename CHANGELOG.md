@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.2 - 2026-05-20
+
+Correctness backlog from the v0.3.0 followup field report (§2.1, §2.2, §2.3, §2.4, §3.1, §3.2). No CLI surface changes, no breaking changes. Bug fixes plus regression tests for previously-undocumented invariants.
+
+- **`exportBatch.processOne` rejects items carrying both `slug` AND `projectId+compositionId`** (v0.3.0 followup §2.1). The two shapes are mutually exclusive by contract (slug = download mode, projectId+compositionId = publish-then-download mode). The current CLI never constructs such items, but the contract is now enforced at the boundary so a future caller cannot accidentally produce ambiguous behaviour.
+
+- **Empty-slug guard after `slugFromShareUrl`** (v0.3.0 followup §2.2). If a publish job returns a share URL with no path segments (malformed URL, contract drift), `processOne` now returns a structured per-item failure with "could not extract slug from share URL" rather than letting an empty slug propagate to a downstream `published_projects/` 404.
+
+- **`parseFormats` rejects empty `--formats` values at parse time** (v0.3.0 followup §2.4). `--formats ""` and `--formats " , , "` previously produced an empty format list and ran the batch silently with zero output. They now fail fast with a clear usage error and exit 2 before any API call.
+
+- **`SPEAKER_RE` false-positive risk decision** (v0.3.0 followup §2.3). The existing comment block in `src/workflows/webvtt.ts` already documents the known false-positive risk (cue bodies starting with capitalised colon-bearing prefixes like "Time:", "Note:", "Q:"). No real-world failure has surfaced in production. Per the v0.3.2 decision rule, the regex stays as-is and the existing documentation remains the disclosure mechanism. Will revisit if a real failure appears.
+
+- **End-to-end round-trip test for `export` then `download-published --report`** (v0.3.0 followup §3.1). New test in `tests/cli/cli.test.ts` locks the JSON contract between the two commands - export writes `export-report.json`, download-published reads it back via `--report` to regenerate transcripts using the same slugs. A future schema change to the report file that breaks this loop is now caught.
+
+- **Three `parseVtt` edge case tests** (v0.3.0 followup §3.2). NOTE block at EOF without trailing blank line, timestamp-line followed immediately by EOF with no text lines, NOTE body containing a timestamp-looking pattern. None caused bugs in shipped code; the tests document the defensive parser behaviour against future refactors.
+
 ## 0.3.1 - 2026-05-20
 
 Docs-only release. Closes the Underlord capability documentation gap surfaced in `docs/field-reports/2026-05-20-agent-docs-gap-and-v021-status.md` §2.1, plus the v0.3.0 followup polish items in §4. No source code or test changes; `dist/` is unchanged.

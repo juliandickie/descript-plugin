@@ -52,6 +52,24 @@ async function processOne(
   item: ExportBatchItem,
   opts: ExportBatchOptions
 ): Promise<ExportBatchReportItem> {
+  // Reject items that carry both slug AND projectId+compositionId. The two
+  // shapes are mutually exclusive at the boundary (slug = download-mode,
+  // projectId+compositionId = publish-then-download mode). The current CLI
+  // never constructs such items, but enforcing the contract here prevents
+  // ambiguous behaviour for any future caller (per v0.3.0 followup §2.1).
+  if (item.slug && (item.projectId || item.compositionId)) {
+    return {
+      ok: false,
+      slug: item.slug,
+      title: "",
+      outputDir: "",
+      written: [],
+      failed: opts.formats.map((f) => ({ format: f, error: "item carries both slug and projectId+compositionId (mutually exclusive)" })),
+      projectId: item.projectId,
+      compositionId: item.compositionId
+    };
+  }
+
   // Determine the slug. Either passed in (download mode) or via publish (export mode).
   let slug = item.slug;
   if (!slug) {
@@ -97,6 +115,19 @@ async function processOne(
         };
       }
       slug = slugFromShareUrl(out.shareUrl);
+      if (!slug) {
+        // The share URL had no path segments. publishAndWait returned a malformed
+        // URL or Descript's contract changed. Surface the root cause clearly
+        // rather than letting a downstream "published_projects/" 404 obscure it
+        // (per v0.3.0 followup §2.2).
+        return {
+          ok: false, slug: "", title: "", outputDir: "",
+          written: [],
+          failed: opts.formats.map((f) => ({ format: f, error: `could not extract slug from share URL: ${out.shareUrl}` })),
+          projectId: item.projectId,
+          compositionId: item.compositionId
+        };
+      }
     } catch (e) {
       return {
         ok: false, slug: "", title: "", outputDir: "",

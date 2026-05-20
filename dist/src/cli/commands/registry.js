@@ -67,6 +67,13 @@ function parseFormats(ctx, raw, fallback) {
             out.push(p);
         }
     }
+    // Reject empty result. An empty --formats or whitespace-only value would
+    // otherwise run the batch with zero formats and write nothing silently
+    // (per v0.3.0 followup §2.4).
+    if (out.length === 0) {
+        fail(ctx.io, `--formats must include at least one of: ${FORMAT_VALUES.join(", ")}`);
+        return null;
+    }
     return out;
 }
 function parseConcurrency(ctx, raw, fallback) {

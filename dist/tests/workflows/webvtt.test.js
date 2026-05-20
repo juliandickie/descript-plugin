@@ -54,6 +54,47 @@ Cue with settings.
     assert.ok(c !== undefined);
     assert.equal(c.text, "Cue with settings.");
 });
+// v0.3.0 followup §3.2 edge cases - none of these caused bugs in the shipped code,
+// but they document the defensive parser behaviour so a future refactor cannot
+// silently regress.
+test("parseVtt handles NOTE block at EOF without trailing blank line (v0.3.0 followup §3.2)", () => {
+    // The NOTE consumer reads until a blank line or EOF. With no trailing blank,
+    // the loop exits via the i >= lines.length condition and parsing completes cleanly.
+    const noTrailingBlank = "WEBVTT\n\nNOTE\nA closing note without a trailing newline";
+    const cues = parseVtt(noTrailingBlank);
+    assert.deepEqual(cues, []);
+});
+test("parseVtt handles timestamp-line followed immediately by EOF without text lines", () => {
+    // No text lines under the timestamp. The text-collection loop never enters,
+    // producing a cue with empty text rather than crashing.
+    const noTextBelow = "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n";
+    const cues = parseVtt(noTextBelow);
+    assert.equal(cues.length, 1);
+    const c = cues[0];
+    assert.ok(c !== undefined);
+    assert.equal(c.text, "");
+    assert.equal(c.start, "00:00:00.000");
+    assert.equal(c.end, "00:00:01.000");
+});
+test("parseVtt skips NOTE body that itself contains a timestamp-looking pattern", () => {
+    // The NOTE consumer treats every line up to the next blank line as note body,
+    // including lines that happen to look like timestamps. The fake timestamp must
+    // not produce a phantom cue.
+    const noteWithFakeTimestamp = `WEBVTT
+
+NOTE
+this looks like 00:00:00.000 --> 00:00:01.000 but is inside a NOTE
+
+00:00:02.000 --> 00:00:03.000
+real cue.
+`;
+    const cues = parseVtt(noteWithFakeTimestamp);
+    assert.equal(cues.length, 1);
+    const c = cues[0];
+    assert.ok(c !== undefined);
+    assert.equal(c.start, "00:00:02.000");
+    assert.equal(c.text, "real cue.");
+});
 test("toSrt numbers cues starting at 1 and uses comma millis", () => {
     const cues = [
         { start: "00:00:00.000", end: "00:00:02.400", text: "First." },
