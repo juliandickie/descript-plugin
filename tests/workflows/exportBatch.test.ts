@@ -139,3 +139,52 @@ test("multi-project items use projectFolder for two-level nesting", async () => 
   assert.ok(existsSync(join(dir, "Project Two", "Comp B", "Comp B.mp4")));
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("publish-mode item: publish then download in one go", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-batch-"));
+  installMockFetch([
+    // 1. POST /jobs/publish -> submit job
+    { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p", project_url: "u" } },
+    // 2. GET /jobs/j1 -> stopped with result
+    {
+      status: 200,
+      json: {
+        job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "t",
+        drive_id: "d", project_id: "p", project_url: "u",
+        result: {
+          status: "success",
+          share_url: "https://web.descript.com/p/view/slug-xyz",
+          download_url: "https://gcs/X.mp4?s=1",
+          download_url_expires_at: "2026-05-21T00:00:00Z"
+        }
+      }
+    },
+    // 3. GET /published_projects/slug-xyz
+    {
+      status: 200,
+      json: {
+        download_url: "https://gcs/X.mp4?s=2", project_id: "p",
+        publish_type: "video", privacy: "private",
+        metadata: { title: "X" }, subtitles: SAMPLE_VTT
+      }
+    },
+    // 4. GCS curl
+    { status: 200, text: "X-bytes" }
+  ]);
+  const client = new DescriptClient({ token: "t" });
+  const report = await exportBatch(client, {
+    items: [{ projectId: "p", compositionId: "c" }],
+    outputDir: dir,
+    formats: ["mp4", "srt", "md"],
+    endMarker: false,
+    concurrency: 1,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" }
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.items[0]!.slug, "slug-xyz");
+  assert.equal(report.items[0]!.title, "X");
+  assert.deepEqual(report.items[0]!.written, ["mp4", "srt", "md"]);
+  assert.ok(existsSync(join(dir, "X", "X.mp4")));
+  rmSync(dir, { recursive: true, force: true });
+});
