@@ -5,16 +5,24 @@ const USAGE = `Usage: descript <command> [options]
 Commands:
   status                         Check API auth and service status
   config set|list|edit           Manage API token profiles (edit opens the file in your editor)
-  import --url|--file|--media    Import media, create a project (--media <json> add_media, --compositions <json>)
-  agent --prompt [...]           Run an Underlord agent edit
-  publish --project-id [...]     Publish a composition
-  jobs list|get <id>|cancel <id> Inspect or cancel jobs
-  projects list|get <id>         List or fetch projects
+  import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --media <json>, --compositions <json>)
+  agent --prompt [...]           Run an Underlord agent edit (--model <name>; see model list below)
+  publish --project-id [...]     Publish a composition (default --access-level private; elevate explicitly)
+  jobs list|get <id>|cancel <id> Inspect or cancel jobs (list --project-id, --type, --created-after, --created-before, --limit 1-100, --cursor)
+  projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
   published <slug>               Get published project metadata
   download-published <slug>      Download mp4/srt/md from a published slug
   export <pid> [cid] [...]       Publish + download mp4/srt/md (single, project-wide, or --projects)
   edit-in-descript --schema f    Partner-gated import URL exchange
-  batch plan|run <manifest>      Bulk import/edit/publish
+  batch plan|run <manifest>      Bulk import/edit/publish (operator-only)
+
+Underlord models (descript agent --model <name>):
+  Documented as of 2026-05-20 - Auto, Claude Haiku 4.5, Claude Sonnet 4.6,
+  Claude Opus 4.6, Claude Opus 4.7, GPT 5.2, Gemini 3 Pro, Gemini 3.1 Pro.
+  Pass any string. The CLI does not validate the model name; Descript's API
+  is the source of truth and accepts new models as they ship. For credit
+  conservation use Claude Haiku 4.5. See docs/help-docs/Underlord ... in
+  Descript.md for the full table.
 
 Global options:
   --json            Machine-readable output

@@ -333,6 +333,240 @@ test("export still rejects --access-level drive (v0.2.1 carry-forward)", async (
     assert.equal(code, 2);
     assert.match(out.join(""), /access-level must be one of/);
 });
+test("import --url --folder sets folder_name in the request body", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const out = [];
+    const code = await runCli(["import", "--url", "https://x/a.mp4", "--name", "P", "--folder", "My Folder", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.folder_name, "My Folder");
+});
+test("import --url --language sets language on the media item", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const out = [];
+    const code = await runCli(["import", "--url", "https://x/a.mp4", "--name", "P", "--language", "es", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.add_media["media.0"].language, "es");
+});
+test("import --project-id adds media to existing project without project_name or add_compositions", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "existing-p", project_url: "u" } }]);
+    const out = [];
+    const code = await runCli(["import", "--url", "https://x/a.mp4", "--project-id", "existing-p", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.project_id, "existing-p");
+    assert.equal(body.project_name, undefined);
+    assert.equal(body.add_compositions, undefined);
+    assert.ok(body.add_media["media.0"].url);
+});
+test("import --project-id without --url or --media exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: {} }]);
+    const out = [];
+    const code = await runCli(["import", "--project-id", "existing-p", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /--url or --media/);
+});
+// =========================================================================
+// v0.4.0 worker insertion markers - DO NOT REMOVE
+// Each worker inserts immediately ABOVE their marker.
+// === V040 IMPORT TESTS ===
+// === V040 PROJECTS TESTS ===
+test("projects list passes --name filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--name", "foo", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("name=foo"), "expected name=foo in URL: " + calls[0].url);
+});
+test("projects list passes --folder-path filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--folder-path", "Clients/Acme", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("folder_path="), "expected folder_path in URL: " + calls[0].url);
+});
+test("projects list passes --created-by filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--created-by", "me", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("created_by=me"), "expected created_by=me in URL: " + calls[0].url);
+});
+test("projects list passes --created-after filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--created-after", "2024-01-01T00:00:00Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("created_after="), "expected created_after in URL: " + calls[0].url);
+});
+test("projects list passes --created-before filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--created-before", "2024-12-31T23:59:59Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("created_before="), "expected created_before in URL: " + calls[0].url);
+});
+test("projects list passes --updated-after filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--updated-after", "2024-06-01T00:00:00Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("updated_after="), "expected updated_after in URL: " + calls[0].url);
+});
+test("projects list passes --updated-before filter to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--updated-before", "2024-06-30T23:59:59Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("updated_before="), "expected updated_before in URL: " + calls[0].url);
+});
+test("projects list passes --sort and --direction to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--sort", "updated_at", "--direction", "asc", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("sort=updated_at"), "expected sort=updated_at in URL: " + calls[0].url);
+    assert.ok(calls[0].url.includes("direction=asc"), "expected direction=asc in URL: " + calls[0].url);
+});
+test("projects list passes --limit to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--limit", "50", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("limit=50"), "expected limit=50 in URL: " + calls[0].url);
+});
+test("projects list passes --cursor to API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--cursor", "next-page-token", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("cursor="), "expected cursor in URL: " + calls[0].url);
+});
+test("projects list combined filters produce correct query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--name", "foo", "--sort", "updated_at", "--direction", "asc", "--limit", "50", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("name=foo"), "expected name=foo in URL: " + calls[0].url);
+    assert.ok(calls[0].url.includes("sort=updated_at"), "expected sort=updated_at in URL: " + calls[0].url);
+    assert.ok(calls[0].url.includes("direction=asc"), "expected direction=asc in URL: " + calls[0].url);
+    assert.ok(calls[0].url.includes("limit=50"), "expected limit=50 in URL: " + calls[0].url);
+});
+test("projects list --sort with invalid value exits 2", async () => {
+    installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--sort", "xyz"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
+    assert.match(c.out.join(""), /sort must be one of/);
+});
+test("projects list --direction with invalid value exits 2", async () => {
+    installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--direction", "sideways"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
+    assert.match(c.out.join(""), /direction must be one of/);
+});
+test("projects list --limit out of range exits 2", async () => {
+    installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const c = capture();
+    const code = await runCli(["projects", "list", "--limit", "200"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
+    assert.match(c.out.join(""), /limit must be an integer between 1 and 100/);
+});
+// === V040 JOBS TESTS ===
+test("jobs list --project-id passes project_id in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--project-id", "uuid-123", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("project_id=uuid-123"), `expected project_id in URL, got: ${calls[0].url}`);
+});
+test("jobs list --type agent passes type in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--type", "agent", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("type=agent"), `expected type=agent in URL, got: ${calls[0].url}`);
+});
+test("jobs list --type import/project_media passes type in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--type", "import/project_media", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("type=import"), `expected type=import... in URL, got: ${calls[0].url}`);
+});
+test("jobs list --type publish exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--type", "publish", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /--type must be one of/);
+});
+test("jobs list --limit 50 passes limit in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--limit", "50", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("limit=50"), `expected limit=50 in URL, got: ${calls[0].url}`);
+});
+test("jobs list --limit 0 exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--limit", "0", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /--limit must be an integer between 1 and 100/);
+});
+test("jobs list --limit 101 exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--limit", "101", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /--limit must be an integer between 1 and 100/);
+});
+test("jobs list --limit abc exits 2 without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--limit", "abc", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+});
+test("jobs list --cursor passes cursor in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--cursor", "next-page-token", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("cursor=next-page-token"), `expected cursor in URL, got: ${calls[0].url}`);
+});
+test("jobs list --created-after passes created_after in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--created-after", "2026-01-01T00:00:00Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("created_after="), `expected created_after in URL, got: ${calls[0].url}`);
+});
+test("jobs list --created-before passes created_before in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--created-before", "2026-05-01T00:00:00Z", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(calls[0].url.includes("created_before="), `expected created_before in URL, got: ${calls[0].url}`);
+});
+test("jobs list combined filters produce expected query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--project-id", "uuid-abc", "--type", "agent", "--limit", "50", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    const url = calls[0].url;
+    assert.ok(url.includes("project_id=uuid-abc"), `missing project_id in: ${url}`);
+    assert.ok(url.includes("type=agent"), `missing type in: ${url}`);
+    assert.ok(url.includes("limit=50"), `missing limit in: ${url}`);
+});
+// =========================================================================
 test("export --projects with --composition-ids exits 2 (mutually exclusive)", async () => {
     const out = [];
     const code = await runCli(["export", "--projects", "p1,p2", "--composition-ids", "c1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });

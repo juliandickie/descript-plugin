@@ -161,6 +161,23 @@ export interface ProjectSummary {
   updated_at: string;
   folder_path?: string;
 }
+export type ProjectSortField = "name" | "created_at" | "updated_at" | "last_viewed_at";
+export type SortDirection = "asc" | "desc";
+
+export interface ListProjectsQuery {
+  name?: string;
+  folder_path?: string;
+  created_by?: string;
+  created_after?: string;
+  created_before?: string;
+  updated_after?: string;
+  updated_before?: string;
+  sort?: ProjectSortField;
+  direction?: SortDirection;
+  limit?: number;
+  cursor?: string;
+}
+
 export interface ListProjectsResponse {
   data: ProjectSummary[];
   pagination: Pagination;

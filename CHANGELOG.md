@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.4.0 - 2026-05-21
+
+Feature surface expansion. Closes the gap between Descript's documented API surface (per `docs/help-docs/Descript API.md`) and the plugin's CLI. 23 new CLI flags across three commands, plus the audio-publish write-mode smoke harness. No breaking changes; existing scripts continue to work.
+
+This release was executed in parallel via three file-scoped worker agents (import, list-projects, list-jobs verticals) with the coordinator handling cross-cutting work. All workers stayed within their non-overlapping write scopes. Total test count went from 161 to 207.
+
+**Import flag expansion** (3 new flags, per v0.4.0 plan Tasks 1-3)
+
+- `descript import --folder <path>` adds `folder_name` to the import request, placing new projects under a nested folder (e.g. `Clients/Acme/Videos`).
+
+- `descript import --language <code>` adds an ISO 639-1 language code to media items, overriding Descript's auto-detection.
+
+- `descript import --project-id <id>` imports additional media into an existing project. The request shape omits `project_name` and `add_compositions`. Use the existing `--name` flag (without `--project-id`) to continue creating new projects.
+
+**List-projects filter expansion** (11 new flags, per v0.4.0 plan Task 4)
+
+- `descript projects list --name <str>` (case-insensitive substring), `--folder-path`, `--created-by` (UUID or `me`), `--created-after`, `--created-before`, `--updated-after`, `--updated-before`, `--sort` (`name|created_at|updated_at|last_viewed_at`), `--direction` (`asc|desc`), `--limit 1-100`, `--cursor` for pagination.
+
+- New exported `ListProjectsQuery` interface in `src/client/types.ts`. Enum violations on `--sort` and `--direction` fail fast at parse time.
+
+**List-jobs filter expansion** (6 new flags, per v0.4.0 plan Task 5)
+
+- `descript jobs list --project-id`, `--type` (`import/project_media|agent` only - `publish` is not accepted by the API), `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`.
+
+- Enum violations on `--type` (including the common error `--type publish`) fail fast at parse time before any API call.
+
+**Model picker pass-through with documented help text** (per v0.4.0 plan Task 6, per Architect's iteration-1 recommendation on the v0.3.3 ADR)
+
+- `descript agent --model <name>` continues to pass any string through unvalidated. The CLI does not maintain an enum that would drift behind Descript's model list.
+
+- The USAGE help text now lists the documented models as of 2026-05-20 (Auto, Claude Haiku 4.5, Claude Sonnet 4.6, Claude Opus 4.6, Claude Opus 4.7, GPT 5.2, Gemini 3 Pro, Gemini 3.1 Pro) with the explicit caveat that any string is accepted. For credit conservation the Haiku 4.5 model is the cost-efficient default. See `docs/help-docs/Underlord (beta) Your AI co-editor in Descript.md` for the upstream table.
+
+**Audio-publish write-mode smoke** (per v0.4.0 plan Task 7)
+
+- `npm run smoke:concurrency -- --mode write --confirm` (requires `DESCRIPT_SMOKE_MODE_WRITE=1` env var, both opt-in mechanisms required). Submits 5 publish jobs at varying concurrency and immediately cancels each to avoid wasting server-side renders. Measures 429 incidence and confirms the rate-limit recovery path via `Retry-After` headers.
+
+- Refuses to run without both the env var AND the `--confirm` flag. Continues to exclude from `npm test` and CI.
+
+**Composition-ID format documentation** (per v0.4.0 plan Task 10)
+
+- `descript-api-reference` SKILL.md continues to document that `composition_id` accepts UUID, 5-character short ID, or full Descript project URL. The CLI passes through unchanged; the API normalises.
+
+**Retry-After audit** (per v0.4.0 plan Task 8)
+
+- Confirmed the implementation at `src/client/http.ts:53,68-86` and `tests/client/http.test.ts:36-53` is complete and shipped in v0.3.1. No new code or tests needed. `descript-api-reference` SKILL.md references the implementation by line range.
+
+**Deferred to v0.4.1**
+
+- `--resume` on `descript export` requires a dedicated design pass per field report §5.1.
+
+- `--formats media` alias for `--formats mp4` not shipped (no audio-export use case has surfaced).
+
 ## 0.3.3 - 2026-05-20
 
 Documentary-only release implementing the Stream B model-invocation policy decision (`docs/specs/2026-05-20-model-invocation-policy.md`). Closes the deferred question from the v0.3.0 followup field report §5.4 and the original v0.2.0 §3.6 complaint about the publish skill's gate being "over-defensive". No source code or test changes; `dist/` produces no behavioural diff.

@@ -5,7 +5,7 @@ import { getStatus } from "./status.js";
 import { getPublishedProjectMetadata } from "./published.js";
 import { postEditInDescriptSchema } from "./editInDescript.js";
 import type {
-  ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, EditInDescriptBody
+  ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody
 } from "./types.js";
 
 export class DescriptClient {
@@ -19,7 +19,7 @@ export class DescriptClient {
   listJobs(query?: ListJobsQuery) { return jobs.listJobs(this.http, query); }
   getJob(jobId: string) { return jobs.getJob(this.http, jobId); }
   cancelJob(jobId: string) { return jobs.cancelJob(this.http, jobId); }
-  listProjects(query?: { cursor?: string; limit?: number }) { return projects.listProjects(this.http, query); }
+  listProjects(query?: ListProjectsQuery) { return projects.listProjects(this.http, query); }
   getProject(projectId: string) { return projects.getProject(this.http, projectId); }
   getStatus() { return getStatus(this.http); }
   getPublishedProjectMetadata(slug: string) { return getPublishedProjectMetadata(this.http, slug); }

@@ -18,7 +18,7 @@ descript status, config, import, agent, publish, jobs, projects, published, down
 
 Async, returns `job_id`. URL imports, direct upload (three-step flow handled automatically by `--file`), and full multitrack/`add_media`/`add_compositions` shapes via raw JSON.
 
-- Supported via raw `--media` and `--compositions` JSON today - `folder_name` (place project in a folder), `language` (ISO 639-1 per media item), `project_id` (import into an existing project). Dedicated CLI flags for these land in v0.4.0.
+- Dedicated CLI flags - `--folder <path>` (project folder placement), `--language <code>` (ISO 639-1 per media item), `--project-id <id>` (import into an existing project, no `add_compositions`). The raw `--media` JSON path remains for arbitrary shapes including multitrack sequences.
 
 - See `docs/help-docs/Descript API.md` sections "Import media into a new project" and "Direct file upload" for the full request schema and the three-step upload walkthrough.
 
@@ -52,11 +52,11 @@ State is `queued`, `running`, `stopped`, `cancelled`. Completion is `job_state =
 
 - 30-day max lookback via `created_after` and `created_before`.
 
-- CLI filter flags pending v0.4.0; full parameter shape in `docs/help-docs/Descript API.md` under "List jobs".
+- CLI filter flags - `--project-id`, `--type`, `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`. Enum violations (e.g. `--type publish`) fail fast at parse time. See `docs/help-docs/Descript API.md` under "List jobs" for the full parameter shape.
 
 ### projects (GET /projects, GET /projects/{id})
 
-- The list endpoint supports rich filtering by name, folder path, creator, date ranges, with sort and pagination. The CLI currently exposes none of these; v0.4.0 adds them.
+- CLI filter flags - `--name` (case-insensitive contains), `--folder-path`, `--created-by` (UUID or `me`), `--created-after`, `--created-before`, `--updated-after`, `--updated-before`, `--sort` (name|created_at|updated_at|last_viewed_at), `--direction` (asc|desc), `--limit 1-100`, `--cursor`. Enum violations on `--sort` and `--direction` fail fast at parse time.
 
 - See `docs/help-docs/Descript API.md` under "List projects" for the full filter set.
 

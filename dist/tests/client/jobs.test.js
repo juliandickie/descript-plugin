@@ -40,3 +40,46 @@ test("cancelJob DELETEs and resolves on 204", async () => {
     assert.equal(calls[0].method, "DELETE");
     assert.equal(calls[0].url, "https://descriptapi.com/v1/jobs/j1");
 });
+test("listJobs serializes type=agent in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), { type: "agent" });
+    assert.ok(calls[0].url.includes("type=agent"), `expected type=agent in URL, got: ${calls[0].url}`);
+});
+test("listJobs serializes type=import/project_media in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), { type: "import/project_media" });
+    assert.ok(calls[0].url.includes("type=import"), `expected type=import... in URL, got: ${calls[0].url}`);
+});
+test("listJobs serializes created_after in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), { created_after: "2026-01-01T00:00:00Z" });
+    assert.ok(calls[0].url.includes("created_after="), `expected created_after in URL, got: ${calls[0].url}`);
+});
+test("listJobs serializes created_before in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), { created_before: "2026-05-01T00:00:00Z" });
+    assert.ok(calls[0].url.includes("created_before="), `expected created_before in URL, got: ${calls[0].url}`);
+});
+test("listJobs serializes cursor in query string", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), { cursor: "tok-abc" });
+    assert.ok(calls[0].url.includes("cursor=tok-abc"), `expected cursor in URL, got: ${calls[0].url}`);
+});
+test("listJobs serializes all six query fields together", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    await listJobs(http(), {
+        project_id: "pid-1",
+        type: "agent",
+        created_after: "2026-01-01T00:00:00Z",
+        created_before: "2026-05-01T00:00:00Z",
+        limit: 10,
+        cursor: "cur-x"
+    });
+    const url = calls[0].url;
+    assert.ok(url.includes("project_id=pid-1"), `missing project_id in: ${url}`);
+    assert.ok(url.includes("type=agent"), `missing type in: ${url}`);
+    assert.ok(url.includes("created_after="), `missing created_after in: ${url}`);
+    assert.ok(url.includes("created_before="), `missing created_before in: ${url}`);
+    assert.ok(url.includes("limit=10"), `missing limit in: ${url}`);
+    assert.ok(url.includes("cursor=cur-x"), `missing cursor in: ${url}`);
+});

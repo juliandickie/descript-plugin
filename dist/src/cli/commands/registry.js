@@ -26,6 +26,10 @@ const TEAM_ACCESS = ["edit", "comment", "view", "none"];
 const MEDIA_TYPE = ["Video", "Audio"];
 const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"];
 const ACCESS_LEVEL = ["public", "unlisted", "private"];
+// NOTE: "publish" is intentionally absent - the GET /jobs endpoint does not accept it.
+const JOB_TYPE = ["import/project_media", "agent"];
+const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"];
+const PROJECT_DIRECTION = ["asc", "desc"];
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx, flag, allowed) {
     const v = ctx.flags[flag];
@@ -111,10 +115,43 @@ export const COMMANDS = {
         if (badEnum(ctx, "team-access", TEAM_ACCESS))
             return 2;
         const teamAccess = typeof ctx.flags["team-access"] === "string" ? ctx.flags["team-access"] : undefined;
-        const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}) };
+        const folderName = typeof ctx.flags.folder === "string" ? ctx.flags.folder : undefined;
+        const language = typeof ctx.flags.language === "string" ? ctx.flags.language : undefined;
+        const projectId = typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined;
+        const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}), ...(folderName ? { folder_name: folderName } : {}) };
         const mediaJson = typeof ctx.flags.media === "string" ? ctx.flags.media : undefined;
         const file = typeof ctx.flags.file === "string" ? ctx.flags.file : undefined;
         const url = typeof ctx.flags.url === "string" ? ctx.flags.url : undefined;
+        if (projectId) {
+            // Importing into an existing project: no project_name, no add_compositions.
+            if (!mediaJson && !url) {
+                fail(ctx.io, "Provide --url or --media <json> when using --project-id");
+                return 2;
+            }
+            let addMedia;
+            if (mediaJson) {
+                try {
+                    addMedia = JSON.parse(mediaJson);
+                }
+                catch {
+                    fail(ctx.io, "--media must be valid JSON (an add_media map)");
+                    return 2;
+                }
+            }
+            else {
+                const mediaItem = language ? { url: url, language } : { url: url };
+                addMedia = { "media.0": mediaItem };
+            }
+            const req = { project_id: projectId, add_media: addMedia, ...extra };
+            if (noWait(ctx)) {
+                const s = await c.importProjectMedia(req);
+                emit(ctx.io, `Submitted ${s.job_id}`, s);
+                return 0;
+            }
+            const out = await importAndWait(c, req);
+            emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
+            return out.ok ? 0 : 4;
+        }
         if (mediaJson) {
             let addMedia;
             try {
@@ -164,7 +201,8 @@ export const COMMANDS = {
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
         }
-        const req = { project_name: name, add_media: { "media.0": { url: url } }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra };
+        const urlMediaItem = language ? { url: url, language } : { url: url };
+        const req = { project_name: name, add_media: { "media.0": urlMediaItem }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra };
         if (noWait(ctx)) {
             const s = await c.importProjectMedia(req);
             emit(ctx.io, `Submitted ${s.job_id}`, s);
@@ -236,7 +274,27 @@ export const COMMANDS = {
         const c = client(ctx);
         const sub = ctx.args[0];
         if (sub === "list") {
-            const r = await c.listJobs();
+            if (badEnum(ctx, "type", JOB_TYPE))
+                return 2;
+            const limitRaw = ctx.flags.limit;
+            let limit;
+            if (limitRaw !== undefined) {
+                const n = Number(limitRaw);
+                if (!Number.isInteger(n) || n < 1 || n > 100) {
+                    fail(ctx.io, "--limit must be an integer between 1 and 100");
+                    return 2;
+                }
+                limit = n;
+            }
+            const query = {
+                project_id: typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined,
+                type: typeof ctx.flags.type === "string" ? ctx.flags.type : undefined,
+                created_after: typeof ctx.flags["created-after"] === "string" ? ctx.flags["created-after"] : undefined,
+                created_before: typeof ctx.flags["created-before"] === "string" ? ctx.flags["created-before"] : undefined,
+                limit,
+                cursor: typeof ctx.flags.cursor === "string" ? ctx.flags.cursor : undefined,
+            };
+            const r = await c.listJobs(query);
             emit(ctx.io, `${r.data.length} job(s)`, r);
             return 0;
         }
@@ -257,7 +315,34 @@ export const COMMANDS = {
         const c = client(ctx);
         const sub = ctx.args[0];
         if (sub === "list") {
-            const r = await c.listProjects();
+            if (badEnum(ctx, "sort", PROJECT_SORT))
+                return 2;
+            if (badEnum(ctx, "direction", PROJECT_DIRECTION))
+                return 2;
+            const rawLimit = ctx.flags["limit"];
+            let limit;
+            if (rawLimit !== undefined) {
+                const n = Number(rawLimit);
+                if (!Number.isInteger(n) || n < 1 || n > 100) {
+                    fail(ctx.io, "--limit must be an integer between 1 and 100");
+                    return 2;
+                }
+                limit = n;
+            }
+            const query = {
+                name: typeof ctx.flags["name"] === "string" ? ctx.flags["name"] : undefined,
+                folder_path: typeof ctx.flags["folder-path"] === "string" ? ctx.flags["folder-path"] : undefined,
+                created_by: typeof ctx.flags["created-by"] === "string" ? ctx.flags["created-by"] : undefined,
+                created_after: typeof ctx.flags["created-after"] === "string" ? ctx.flags["created-after"] : undefined,
+                created_before: typeof ctx.flags["created-before"] === "string" ? ctx.flags["created-before"] : undefined,
+                updated_after: typeof ctx.flags["updated-after"] === "string" ? ctx.flags["updated-after"] : undefined,
+                updated_before: typeof ctx.flags["updated-before"] === "string" ? ctx.flags["updated-before"] : undefined,
+                sort: typeof ctx.flags["sort"] === "string" ? ctx.flags["sort"] : undefined,
+                direction: typeof ctx.flags["direction"] === "string" ? ctx.flags["direction"] : undefined,
+                limit,
+                cursor: typeof ctx.flags["cursor"] === "string" ? ctx.flags["cursor"] : undefined,
+            };
+            const r = await c.listProjects(query);
             emit(ctx.io, `${r.data.length} project(s)`, r);
             return 0;
         }
