@@ -9,6 +9,12 @@ export interface ExportBatchItem {
   compositionId?: string;
   slug?: string;
   projectFolder?: string;
+  /**
+   * Formats to skip for this item. Used by `descript export --resume` to avoid
+   * re-downloading or re-publishing what the prior report already covered. See
+   * `docs/specs/2026-05-21-export-resume-design.md` for the semantics table.
+   */
+  skipFormats?: ExportFormat[];
 }
 
 export interface ExportBatchOptions {
@@ -23,6 +29,13 @@ export interface ExportBatchOptions {
     resolution: "480p" | "720p" | "1080p" | "1440p" | "4K";
     accessLevel: "public" | "unlisted" | "private";
   };
+  /**
+   * When false, exportBatch returns the in-memory report but does NOT write
+   * <outputDir>/<command>-report.json. Used by `descript export --resume`
+   * which writes its own `resume-report.json` with a different shape.
+   * Defaults to true.
+   */
+  writeReport?: boolean;
 }
 
 export interface ExportBatchReportItem extends ExportPublishedResult {
@@ -65,6 +78,7 @@ async function processOne(
       outputDir: "",
       written: [],
       failed: opts.formats.map((f) => ({ format: f, error: "item carries both slug and projectId+compositionId (mutually exclusive)" })),
+      skipped: [],
       projectId: item.projectId,
       compositionId: item.compositionId
     };
@@ -81,6 +95,7 @@ async function processOne(
         outputDir: "",
         written: [],
         failed: opts.formats.map((f) => ({ format: f, error: "item missing slug and projectId+compositionId" })),
+        skipped: [],
         projectId: item.projectId,
         compositionId: item.compositionId
       };
@@ -93,6 +108,7 @@ async function processOne(
         outputDir: "",
         written: [],
         failed: opts.formats.map((f) => ({ format: f, error: "publish options required for export-mode batch" })),
+        skipped: [],
         projectId: item.projectId,
         compositionId: item.compositionId
       };
@@ -110,6 +126,7 @@ async function processOne(
           ok: false, slug: "", title: "", outputDir: "",
           written: [],
           failed: opts.formats.map((f) => ({ format: f, error: out.error ?? "publish failed without error" })),
+          skipped: [],
           projectId: item.projectId,
           compositionId: item.compositionId
         };
@@ -124,6 +141,7 @@ async function processOne(
           ok: false, slug: "", title: "", outputDir: "",
           written: [],
           failed: opts.formats.map((f) => ({ format: f, error: `could not extract slug from share URL: ${out.shareUrl}` })),
+          skipped: [],
           projectId: item.projectId,
           compositionId: item.compositionId
         };
@@ -133,6 +151,7 @@ async function processOne(
         ok: false, slug: "", title: "", outputDir: "",
         written: [],
         failed: opts.formats.map((f) => ({ format: f, error: e instanceof Error ? e.message : String(e) })),
+        skipped: [],
         projectId: item.projectId,
         compositionId: item.compositionId
       };
@@ -145,7 +164,8 @@ async function processOne(
       outputDir: opts.outputDir,
       formats: opts.formats,
       endMarker: opts.endMarker,
-      projectFolder: item.projectFolder
+      projectFolder: item.projectFolder,
+      ...(item.skipFormats ? { skipFormats: item.skipFormats } : {})
     });
     return {
       ...result,
@@ -160,6 +180,7 @@ async function processOne(
       outputDir: "",
       written: [],
       failed: opts.formats.map((f) => ({ format: f, error: e instanceof Error ? e.message : String(e) })),
+      skipped: [],
       projectId: item.projectId,
       compositionId: item.compositionId
     };
@@ -195,11 +216,13 @@ export async function exportBatch(
   const ok = items.every((i) => i.ok);
   const report: ExportBatchReport = { ok, command: opts.command, items };
 
-  const reportPath = join(
-    opts.outputDir,
-    opts.command === "export" ? "export-report.json" : "download-report.json"
-  );
-  writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+  if (opts.writeReport !== false) {
+    const reportPath = join(
+      opts.outputDir,
+      opts.command === "export" ? "export-report.json" : "download-report.json"
+    );
+    writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+  }
 
   return report;
 }

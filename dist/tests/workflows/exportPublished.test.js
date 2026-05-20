@@ -222,3 +222,101 @@ test("metadata has no download_url then mp4 fails but srt and md still write", a
     assert.match(result.failed[0].error, /download_url/);
     rmSync(dir, { recursive: true, force: true });
 });
+// v0.4.1 - skipFormats behavior (per docs/specs/2026-05-21-export-resume-design.md)
+test("skipFormats excludes listed formats from work, adds them to result.skipped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-skip-"));
+    // Only one fetch expected - metadata. mp4 is skipped so no curl.
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs/T.mp4?s=x", project_id: "p",
+                publish_type: "video", privacy: "private",
+                metadata: { title: "T" }, subtitles: SAMPLE_VTT
+            }
+        }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const result = await exportPublished(client, {
+        slug: "s", outputDir: dir, formats: ["mp4", "srt", "md"], endMarker: false,
+        skipFormats: ["mp4"]
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.written.sort(), ["md", "srt"]);
+    assert.deepEqual(result.skipped, ["mp4"]);
+    assert.equal(result.failed.length, 0);
+    // mp4 file should NOT have been written
+    assert.ok(!existsSync(join(dir, "T", "T.mp4")));
+    // srt and md should be present
+    assert.ok(existsSync(join(dir, "T", "T.srt")));
+    assert.ok(existsSync(join(dir, "T", "T.md")));
+    rmSync(dir, { recursive: true, force: true });
+});
+test("skipFormats covering ALL requested formats writes nothing but ok stays true", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-skip-all-"));
+    // Only metadata is fetched even though all formats are skipped (we still need title etc.)
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs/T.mp4?s=x", project_id: "p",
+                publish_type: "video", privacy: "private",
+                metadata: { title: "T" }, subtitles: SAMPLE_VTT
+            }
+        }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const result = await exportPublished(client, {
+        slug: "s", outputDir: dir, formats: ["mp4", "srt", "md"], endMarker: false,
+        skipFormats: ["mp4", "srt", "md"]
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.written, []);
+    assert.deepEqual(result.skipped.sort(), ["md", "mp4", "srt"]);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("skipFormats with no overlap with formats is a no-op (no skipped entries)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-skip-noop-"));
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs/T.mp4?s=x", project_id: "p",
+                publish_type: "video", privacy: "private",
+                metadata: { title: "T" }, subtitles: SAMPLE_VTT
+            }
+        },
+        { status: 200, text: "mp4bytes" }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    // formats=[mp4], skipFormats=[srt,md] - srt/md aren't in formats so skipped[] stays []
+    const result = await exportPublished(client, {
+        slug: "s", outputDir: dir, formats: ["mp4"], endMarker: false,
+        skipFormats: ["srt", "md"]
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.written, ["mp4"]);
+    assert.deepEqual(result.skipped, []);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("result.skipped is empty array when skipFormats option is omitted (backward compat)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-no-skip-"));
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs/T.mp4?s=x", project_id: "p",
+                publish_type: "video", privacy: "private",
+                metadata: { title: "T" }, subtitles: SAMPLE_VTT
+            }
+        },
+        { status: 200, text: "mp4bytes" }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const result = await exportPublished(client, {
+        slug: "s", outputDir: dir, formats: ["mp4"], endMarker: false
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.skipped, []);
+    rmSync(dir, { recursive: true, force: true });
+});

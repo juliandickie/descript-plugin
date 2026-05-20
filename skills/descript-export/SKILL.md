@@ -42,3 +42,23 @@ End-to-end pipeline: publish a composition (or many), download the rendered medi
 7. For iteration ("regenerate just the transcripts after editing my chapter-gen prompt"), use descript-download-published with the slugs from the prior run's export-report.json. That path is read-only and free.
 
 8. A 403 from publish means the Drive's publish settings block the requested access level. Report the hint from the error.
+
+## Resume (v0.4.1+)
+
+If a prior export was interrupted or some output files were deleted, use `--resume <path-to-export-report.json>` instead of repassing project IDs. The CLI -
+
+- Reads the prior `export-report.json`.
+
+- Per item, decides per-format whether to skip (already on disk), re-download (file missing but slug recorded), or re-publish-and-download (publish failed in the original run).
+
+- Writes a new `resume-report.json` in the output dir with the same schema-versioned shape.
+
+Resume rules -
+
+- `--resume` is mutually exclusive with positional `<project-id>`, `--projects`, and `--composition-ids`.
+
+- `--formats` on a resume call narrows the format set; it cannot widen beyond what the original run attempted. The CLI rejects disjoint format sets at parse time with a clear "run a fresh export instead" message.
+
+- Items where the prior report records a successful publish (non-empty slug) skip republish on resume - cost-reuse principle.
+
+See `docs/specs/2026-05-21-export-resume-design.md` for the full semantics table.

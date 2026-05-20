@@ -12,6 +12,14 @@ export interface ExportPublishedOptions {
   formats: ExportFormat[];
   endMarker: boolean;
   projectFolder?: string;
+  /**
+   * Formats to deliberately skip for this item. Used by `descript export --resume`
+   * to avoid re-downloading files that already exist on disk or were never
+   * attempted in the original run. Listed formats are excluded from the per-format
+   * loop and recorded in `skipped` on the result. See
+   * `docs/specs/2026-05-21-export-resume-design.md` for the semantics table.
+   */
+  skipFormats?: ExportFormat[];
 }
 
 export interface ExportPublishedResult {
@@ -21,6 +29,8 @@ export interface ExportPublishedResult {
   outputDir: string;
   written: ExportFormat[];
   failed: Array<{ format: ExportFormat; error: string }>;
+  /** Formats deliberately not attempted (set when caller passes `skipFormats`). */
+  skipped: ExportFormat[];
 }
 
 function extensionFromUrl(downloadUrl: string, publishType: "audio" | "video" | "audiogram"): string {
@@ -54,6 +64,13 @@ export async function exportPublished(
   const targetDir = opts.projectFolder
     ? join(opts.outputDir, opts.projectFolder, safeTitle)
     : join(opts.outputDir, safeTitle);
+  const skipSet = new Set<ExportFormat>(opts.skipFormats ?? []);
+  // Per-format granularity: only build skipped[] for formats actually present in
+  // the requested formats list. A skipFormats entry that isn't in opts.formats is
+  // a no-op (no double-counting).
+  const skipped: ExportFormat[] = opts.formats.filter((f) => skipSet.has(f));
+  const effectiveFormats: ExportFormat[] = opts.formats.filter((f) => !skipSet.has(f));
+
   try {
     mkdirSync(targetDir, { recursive: true });
   } catch (e) {
@@ -63,17 +80,18 @@ export async function exportPublished(
       title,
       outputDir: targetDir,
       written: [],
-      failed: opts.formats.map((format) => ({
+      failed: effectiveFormats.map((format) => ({
         format,
         error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
-      }))
+      })),
+      skipped
     };
   }
 
   const written: ExportFormat[] = [];
   const failed: Array<{ format: ExportFormat; error: string }> = [];
 
-  for (const fmt of opts.formats) {
+  for (const fmt of effectiveFormats) {
     try {
       if (fmt === "mp4") {
         if (!meta.download_url) throw new Error("metadata response has no download_url");
@@ -106,6 +124,7 @@ export async function exportPublished(
     title,
     outputDir: targetDir,
     written,
-    failed
+    failed,
+    skipped
   };
 }

@@ -32,6 +32,12 @@ export async function exportPublished(client, opts) {
     const targetDir = opts.projectFolder
         ? join(opts.outputDir, opts.projectFolder, safeTitle)
         : join(opts.outputDir, safeTitle);
+    const skipSet = new Set(opts.skipFormats ?? []);
+    // Per-format granularity: only build skipped[] for formats actually present in
+    // the requested formats list. A skipFormats entry that isn't in opts.formats is
+    // a no-op (no double-counting).
+    const skipped = opts.formats.filter((f) => skipSet.has(f));
+    const effectiveFormats = opts.formats.filter((f) => !skipSet.has(f));
     try {
         mkdirSync(targetDir, { recursive: true });
     }
@@ -42,15 +48,16 @@ export async function exportPublished(client, opts) {
             title,
             outputDir: targetDir,
             written: [],
-            failed: opts.formats.map((format) => ({
+            failed: effectiveFormats.map((format) => ({
                 format,
                 error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
-            }))
+            })),
+            skipped
         };
     }
     const written = [];
     const failed = [];
-    for (const fmt of opts.formats) {
+    for (const fmt of effectiveFormats) {
         try {
             if (fmt === "mp4") {
                 if (!meta.download_url)
@@ -87,6 +94,7 @@ export async function exportPublished(client, opts) {
         title,
         outputDir: targetDir,
         written,
-        failed
+        failed,
+        skipped
     };
 }

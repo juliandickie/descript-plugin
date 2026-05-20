@@ -2,7 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { runCli, parseArgv } from "../../src/cli/index.js";
 import { installMockFetch, restoreFetch, installNoNetwork } from "../helpers/mockFetch.js";
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 afterEach(() => restoreFetch());
@@ -669,5 +669,169 @@ test("export then download-published --report round-trips against the same temp 
     assert.equal(dlItem.title, "Round Trip");
     assert.ok(Array.isArray(dlItem.written) && dlItem.written.includes("md"));
     assert.ok(Array.isArray(dlItem.failed));
+    rmSync(dir, { recursive: true, force: true });
+});
+// =========================================================================
+// v0.4.1 - `descript export --resume <path>` integration tests
+// Spec: docs/specs/2026-05-21-export-resume-design.md
+// =========================================================================
+test("export --resume on a non-existent file exits 2 without API calls", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", "/nonexistent/path/to/report.json", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /Could not read JSON/);
+});
+test("export --resume on malformed JSON exits 2", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-malformed-"));
+    const reportPath = join(dir, "report.json");
+    writeFileSync(reportPath, "{not json");
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume on JSON without items array exits 2", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-noitems-"));
+    const reportPath = join(dir, "report.json");
+    writeFileSync(reportPath, JSON.stringify({ ok: true, command: "export" }));
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /missing items array/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume on a report with empty items writes all_skipped:true and exits 0", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-empty-"));
+    const reportPath = join(dir, "report.json");
+    writeFileSync(reportPath, JSON.stringify({ ok: true, command: "export", items: [] }));
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 0);
+    const persisted = JSON.parse(readFileSync(join(dir, "resume-report.json"), "utf8"));
+    assert.equal(persisted.all_skipped, true);
+    assert.equal(persisted.schema_version, 1);
+    assert.equal(persisted.command, "export");
+    assert.equal(persisted.resumed_from, reportPath);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume mutex with positional <project-id> exits 2", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "p", "--resume", "/path/to/report.json", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /Only one of/);
+});
+test("export --resume mutex with --projects exits 2", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--projects", "p1,p2", "--resume", "/path/to/report.json", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /Only one of/);
+});
+test("export --resume mutex with --composition-ids exits 2", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-cidmutex-"));
+    const reportPath = join(dir, "report.json");
+    writeFileSync(reportPath, JSON.stringify({ ok: true, command: "export", items: [] }));
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--composition-ids", "c1", "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /--resume cannot be combined with --composition-ids/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume with disjoint --formats exits 2 at parse time", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-disjoint-"));
+    const reportPath = join(dir, "report.json");
+    writeFileSync(reportPath, JSON.stringify({
+        ok: true, command: "export",
+        items: [{ ok: true, slug: "s1", title: "T", outputDir: "/x",
+                written: ["mp4"], failed: [], skipped: [] }]
+    }));
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--formats", "md", "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 2);
+    assert.equal(calls.length, 0);
+    assert.match(out.join(""), /no items in the report attempted/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume on a fully-complete report with files on disk makes no API calls and exits 0", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-done-"));
+    const compDir = join(dir, "Hello");
+    mkdirSync(compDir, { recursive: true });
+    writeFileSync(join(compDir, "Hello.mp4"), "x");
+    writeFileSync(join(compDir, "Hello.srt"), "x");
+    writeFileSync(join(compDir, "Hello.md"), "x");
+    const reportPath = join(dir, "export-report.json");
+    writeFileSync(reportPath, JSON.stringify({
+        ok: true, command: "export",
+        items: [{
+                ok: true, slug: "slug-hello", title: "Hello", outputDir: compDir,
+                written: ["mp4", "srt", "md"], failed: [], skipped: []
+            }]
+    }));
+    const { calls } = installMockFetch([{ status: 200, json: {} }]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 0, "no API calls should fire when everything is already complete");
+    const persisted = JSON.parse(readFileSync(join(dir, "resume-report.json"), "utf8"));
+    assert.equal(persisted.all_skipped, true);
+    assert.equal(persisted.ok, true);
+    assert.equal(persisted.items.length, 1);
+    assert.equal(persisted.items[0].resumed, false);
+    assert.equal(persisted.items[0].reason, "already complete");
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export --resume on a failed-download item (slug present) redownloads via slug WITHOUT republishing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-resume-redl-"));
+    const compDir = join(dir, "Episode");
+    mkdirSync(compDir, { recursive: true });
+    writeFileSync(join(compDir, "Episode.mp4"), "x");
+    const reportPath = join(dir, "export-report.json");
+    writeFileSync(reportPath, JSON.stringify({
+        ok: false, command: "export",
+        items: [{
+                ok: false, slug: "slug-ep", title: "Episode", outputDir: compDir,
+                written: ["mp4"],
+                failed: [{ format: "md", error: "transient network error" }],
+                skipped: []
+            }]
+    }));
+    // Only metadata fetch expected (no publish, md is derived from subtitles in metadata)
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs/E.mp4?s=x", project_id: "p",
+                publish_type: "video", privacy: "private",
+                metadata: { title: "Episode" },
+                subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nhello.\n"
+            }
+        }
+    ]);
+    const out = [];
+    const code = await runCli(["export", "--resume", reportPath, "--output-dir", dir, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0);
+    assert.ok(existsSync(join(compDir, "Episode.md")));
+    assert.ok(existsSync(join(compDir, "Episode.mp4")));
+    const persisted = JSON.parse(readFileSync(join(dir, "resume-report.json"), "utf8"));
+    assert.equal(persisted.ok, true);
+    assert.equal(persisted.all_skipped, false);
+    assert.equal(persisted.items.length, 1);
+    assert.equal(persisted.items[0].resumed, true);
+    assert.deepEqual(persisted.items[0].skipped, ["mp4"]);
+    assert.ok(persisted.items[0].written.includes("md"));
     rmSync(dir, { recursive: true, force: true });
 });

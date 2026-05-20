@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.4.1 - 2026-05-21
+
+`descript export --resume <path>` ships. Recovers an interrupted or partial export by replaying a prior `export-report.json` without re-publishing already-published compositions. Implementation follows the design spec at `docs/specs/2026-05-21-export-resume-design.md`.
+
+**Semantics** (per-item, per-format)
+
+- `ok: true` items where all requested formats exist on disk are recorded as already complete with `resumed: false, reason: "already complete"`. No API calls fire.
+
+- `ok: true` items where some files were deleted re-download via the prior slug. The publish step is skipped (slug already records a successful publish).
+
+- `ok: false` items where the prior report records a slug retry only the failed formats via the slug path. No republish, no fresh server-side render.
+
+- `ok: false` items where the slug is empty run the full publish-then-download path using the prior report's `projectId` and `compositionId`.
+
+- Items missing both slug and projectId+compositionId fail with a clear "cannot resume" reason.
+
+- All-items-already-complete batches exit 0 with `all_skipped: true` in the new `resume-report.json`.
+
+**Resume report shape**
+
+`<output-dir>/resume-report.json` carries `schema_version: 1`, `command: "export"`, `ok`, `resumed_from`, `all_skipped`, and `items` (each item carries `resumed: boolean`, `reason?: string`, `skipped: ExportFormat[]`, optional `partially_resumable: true`). Distinct filename from `export-report.json` so the prior report is not overwritten.
+
+**Parse-time validation (exits 2 before any API call)**
+
+- Non-existent path, malformed JSON, or missing `items` array.
+
+- `--resume` combined with positional `<project-id>`, `--projects`, or `--composition-ids`. Mutex enforced.
+
+- `--formats` set fully disjoint from the union of formats any item in the prior report attempted. Clear "run a fresh export instead" message.
+
+**Workflow extensions**
+
+- `ExportPublishedOptions` gains optional `skipFormats?: ExportFormat[]`. When set, the workflow excludes those formats from its inner loop and records them in `skipped[]` on the result.
+
+- `ExportPublishedResult` and `ExportBatchReportItem` gain `skipped: ExportFormat[]` (always present, defaults `[]`). Backward-compatible with existing callers that ignore the field.
+
+- `ExportBatchOptions` gains optional `writeReport?: boolean` (default `true`). The resume CLI handler sets it to `false` so it can write `resume-report.json` itself.
+
+- New `src/workflows/exportResume.ts` module - `reconstructResumeItems`, `validateRequestedFormatsAgainstReport`, `buildResumeReport`. Pure functions plus `existsSync` checks.
+
+**Pre-mortem 3 hardening** (per design spec)
+
+The `getPublishedProjectMetadata` call returns a freshly-signed download URL on every invocation, which is what makes the "files deleted, slug-based re-download" path work. The HTTP layer at `src/client/http.ts:53,68-86` already retries on 429 via Retry-After. Item failure reasons include `slug_unreachable` for 404 / sustained 403 / other 4xx, distinguishing "Descript no longer hosts this artifact" from "transient permission glitch".
+
+**Deferred**
+
+- `--formats media` alias for audio publishes - still no use case has surfaced.
+
+- `descript download-published --resume` - out of scope; the spec covers export resume only.
+
 ## 0.4.0 - 2026-05-21
 
 Feature surface expansion. Closes the gap between Descript's documented API surface (per `docs/help-docs/Descript API.md`) and the plugin's CLI. 23 new CLI flags across three commands, plus the audio-publish write-mode smoke harness. No breaking changes; existing scripts continue to work.

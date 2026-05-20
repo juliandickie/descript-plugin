@@ -66,7 +66,7 @@ Vendor-flagged "work in progress". Live payload is `{ drive_id, api_version }`; 
 
 ### published (GET /published_projects/{slug})
 
-Returns metadata, signed `download_url`, and WebVTT `subtitles` for a published composition. Read-only, free. The basis of `descript export` and `descript download-published`.
+Returns metadata, signed `download_url`, and WebVTT `subtitles` for a published composition. Read-only, free. The basis of `descript export` and `descript download-published`. Each call returns a fresh signed `download_url`, so `descript export --resume` can re-download missing files without re-publishing - see `docs/specs/2026-05-21-export-resume-design.md` for the resume semantics table.
 
 ### edit-in-descript (POST /edit_in_descript/schema)
 

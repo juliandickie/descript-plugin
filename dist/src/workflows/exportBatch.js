@@ -27,6 +27,7 @@ async function processOne(client, item, opts) {
             outputDir: "",
             written: [],
             failed: opts.formats.map((f) => ({ format: f, error: "item carries both slug and projectId+compositionId (mutually exclusive)" })),
+            skipped: [],
             projectId: item.projectId,
             compositionId: item.compositionId
         };
@@ -42,6 +43,7 @@ async function processOne(client, item, opts) {
                 outputDir: "",
                 written: [],
                 failed: opts.formats.map((f) => ({ format: f, error: "item missing slug and projectId+compositionId" })),
+                skipped: [],
                 projectId: item.projectId,
                 compositionId: item.compositionId
             };
@@ -54,6 +56,7 @@ async function processOne(client, item, opts) {
                 outputDir: "",
                 written: [],
                 failed: opts.formats.map((f) => ({ format: f, error: "publish options required for export-mode batch" })),
+                skipped: [],
                 projectId: item.projectId,
                 compositionId: item.compositionId
             };
@@ -71,6 +74,7 @@ async function processOne(client, item, opts) {
                     ok: false, slug: "", title: "", outputDir: "",
                     written: [],
                     failed: opts.formats.map((f) => ({ format: f, error: out.error ?? "publish failed without error" })),
+                    skipped: [],
                     projectId: item.projectId,
                     compositionId: item.compositionId
                 };
@@ -85,6 +89,7 @@ async function processOne(client, item, opts) {
                     ok: false, slug: "", title: "", outputDir: "",
                     written: [],
                     failed: opts.formats.map((f) => ({ format: f, error: `could not extract slug from share URL: ${out.shareUrl}` })),
+                    skipped: [],
                     projectId: item.projectId,
                     compositionId: item.compositionId
                 };
@@ -95,6 +100,7 @@ async function processOne(client, item, opts) {
                 ok: false, slug: "", title: "", outputDir: "",
                 written: [],
                 failed: opts.formats.map((f) => ({ format: f, error: e instanceof Error ? e.message : String(e) })),
+                skipped: [],
                 projectId: item.projectId,
                 compositionId: item.compositionId
             };
@@ -106,7 +112,8 @@ async function processOne(client, item, opts) {
             outputDir: opts.outputDir,
             formats: opts.formats,
             endMarker: opts.endMarker,
-            projectFolder: item.projectFolder
+            projectFolder: item.projectFolder,
+            ...(item.skipFormats ? { skipFormats: item.skipFormats } : {})
         });
         return {
             ...result,
@@ -122,6 +129,7 @@ async function processOne(client, item, opts) {
             outputDir: "",
             written: [],
             failed: opts.formats.map((f) => ({ format: f, error: e instanceof Error ? e.message : String(e) })),
+            skipped: [],
             projectId: item.projectId,
             compositionId: item.compositionId
         };
@@ -147,7 +155,9 @@ export async function exportBatch(client, opts) {
     const items = await runPool(opts.items, opts.concurrency, (item) => processOne(client, item, opts));
     const ok = items.every((i) => i.ok);
     const report = { ok, command: opts.command, items };
-    const reportPath = join(opts.outputDir, opts.command === "export" ? "export-report.json" : "download-report.json");
-    writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+    if (opts.writeReport !== false) {
+        const reportPath = join(opts.outputDir, opts.command === "export" ? "export-report.json" : "download-report.json");
+        writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+    }
     return report;
 }

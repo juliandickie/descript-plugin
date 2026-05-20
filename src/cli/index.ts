@@ -14,7 +14,7 @@ Commands:
   projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
   published <slug>               Get published project metadata
   download-published <slug>      Download mp4/srt/md from a published slug
-  export <pid> [cid] [...]       Publish + download mp4/srt/md (single, project-wide, or --projects)
+  export <pid> [cid] [...]       Publish + download mp4/srt/md (single, project-wide, or --projects; --resume <path> replays a prior export-report.json)
   edit-in-descript --schema f    Partner-gated import URL exchange
   batch plan|run <manifest>      Bulk import/edit/publish (operator-only)
 

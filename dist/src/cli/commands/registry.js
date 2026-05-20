@@ -9,7 +9,9 @@ import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { exportBatch } from "../../workflows/exportBatch.js";
 import { sanitize } from "../../workflows/filenameSanitize.js";
-import { readFileSync } from "node:fs";
+import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport } from "../../workflows/exportResume.js";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { emit, fail } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
@@ -455,14 +457,75 @@ export const COMMANDS = {
         const mediaType = ctx.flags["media-type"] ?? "Video";
         const resolution = ctx.flags.resolution ?? "1080p";
         const accessLevel = ctx.flags["access-level"] ?? "private";
-        // Single-composition shape: descript export <PID> <CID>
+        // Three scope modes - positional <project-id> (single or whole-project),
+        // --projects (multi-project), or --resume (replay a prior export).
         const positionalPid = ctx.args[0];
         const positionalCid = ctx.args[1];
         const projectsFlag = typeof ctx.flags.projects === "string" ? ctx.flags.projects : undefined;
         const compositionIdsFlag = typeof ctx.flags["composition-ids"] === "string" ? ctx.flags["composition-ids"] : undefined;
-        if (!positionalPid && !projectsFlag) {
-            fail(ctx.io, "Usage: descript export <project-id> [composition-id] | --projects pid1,pid2");
+        const resumeFlag = typeof ctx.flags.resume === "string" ? ctx.flags.resume : undefined;
+        const userPassedFormats = typeof ctx.flags.formats === "string";
+        // Scope mutex - exactly one of {positional PID, --projects, --resume}
+        const scopeCount = (positionalPid ? 1 : 0) + (projectsFlag ? 1 : 0) + (resumeFlag ? 1 : 0);
+        if (scopeCount === 0) {
+            fail(ctx.io, "Usage: descript export <project-id> [composition-id] | --projects pid1,pid2 | --resume <path>");
             return 2;
+        }
+        if (scopeCount > 1) {
+            fail(ctx.io, "Only one of <project-id>, --projects, --resume may be specified");
+            return 2;
+        }
+        // --resume path runs a distinct flow per docs/specs/2026-05-21-export-resume-design.md.
+        if (resumeFlag) {
+            if (compositionIdsFlag) {
+                fail(ctx.io, "--resume cannot be combined with --composition-ids");
+                return 2;
+            }
+            const raw = readJsonFile(ctx, resumeFlag);
+            if (raw === undefined)
+                return 2;
+            const prior = raw;
+            if (!Array.isArray(prior.items)) {
+                fail(ctx.io, `--resume file does not look like an export-report.json (missing items array)`);
+                return 2;
+            }
+            mkdirSync(outputDir, { recursive: true });
+            if (prior.items.length === 0) {
+                const emptyReport = {
+                    schema_version: 1, command: "export", ok: true,
+                    resumed_from: resumeFlag, all_skipped: true, items: []
+                };
+                writeFileSync(join(outputDir, "resume-report.json"), JSON.stringify(emptyReport, null, 2) + "\n");
+                emit(ctx.io, `--resume file has no items to resume`, emptyReport);
+                return 0;
+            }
+            // Parse-time format-disjoint check per spec semantics table.
+            const validation = validateRequestedFormatsAgainstReport(prior, userPassedFormats ? formats : undefined);
+            if (!validation.ok) {
+                fail(ctx.io, validation.reason);
+                return 2;
+            }
+            const reconstructed = reconstructResumeItems(prior, userPassedFormats ? formats : undefined);
+            let batchItems = [];
+            if (!reconstructed.allSkipped) {
+                const batchReport = await exportBatch(c, {
+                    items: reconstructed.itemsToRun,
+                    outputDir,
+                    formats: reconstructed.effectiveFormats,
+                    endMarker,
+                    concurrency,
+                    command: "export",
+                    publish: { mediaType, resolution, accessLevel },
+                    writeReport: false
+                });
+                batchItems = batchReport.items;
+            }
+            const resumeReport = buildResumeReport(resumeFlag, batchItems, reconstructed.alreadyHandled, reconstructed.allSkipped);
+            writeFileSync(join(outputDir, "resume-report.json"), JSON.stringify(resumeReport, null, 2) + "\n");
+            emit(ctx.io, reconstructed.allSkipped
+                ? `Resume complete - all ${prior.items.length} item(s) already done`
+                : `Resumed ${batchItems.filter((i) => i.ok).length}/${batchItems.length} item(s), ${reconstructed.alreadyHandled.length} already-complete`, resumeReport);
+            return resumeReport.ok ? 0 : 4;
         }
         if (projectsFlag && compositionIdsFlag) {
             fail(ctx.io, "--composition-ids is only valid with the <project-id> form, not --projects");
