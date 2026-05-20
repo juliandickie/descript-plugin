@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "descript",
-  "version": "0.3.0",
-  "description": "Full programmatic access to the Descript API. Proactively activates for: (1) importing media into Descript, (2) Underlord agent edits, (3) publishing compositions, (4) bulk video pipelines, (5) Descript job status.",
+  "version": "0.3.1",
+  "description": "Full programmatic access to the Descript API. Proactively activates for: (1) importing media into Descript, (2) Underlord agent edits including bulk metadata operations across whole projects, (3) publishing compositions, (4) bulk video pipelines, (5) Descript job status, (6) local export of MP4, SRT, and Markdown transcripts for chapter generation and offline workflows.",
   "author": {
     "name": "Julian Dickie",
     "email": "julian@instituteofdigitaldentistry.com",

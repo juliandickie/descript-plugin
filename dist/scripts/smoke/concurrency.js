@@ -1,17 +1,15 @@
 // Concurrency smoke test - dev workflow, not part of npm test, not CI.
 //
 // Discovers Descript's real rate-limit ceiling so we can set a sensible
-// production default for --concurrency. Defaults to read-mode (download-
-// published against an existing project's slugs). Optional --mode write
-// exercises the publish path; the script cancels jobs immediately after
-// submission so server-side renders are not wasted.
+// production default for --concurrency. Read-mode only (download-published
+// against an existing project's slugs). A future write-mode that exercises
+// the publish path is planned for v0.4.0 alongside the Retry-After audit.
 //
-// Env (token resolution follows the standard plugin precedence: flag → env →
-// config file → plugin user-config):
+// Env (token resolution follows the standard plugin precedence: flag, env,
+// config file, plugin user-config):
 //   DESCRIPT_API_TOKEN          - optional; usually resolved from the config file
 //   DESCRIPT_PROFILE            - optional; selects which profile to use
-//   DESCRIPT_SMOKE_PROJECT_ID   - required; must contain at least 5 comps that
-//                                 can safely be re-published
+//   DESCRIPT_SMOKE_PROJECT_ID   - required; must contain at least 5 comps
 //   DESCRIPT_SMOKE_PROFILE      - optional alias for DESCRIPT_PROFILE
 //
 // Output: markdown summary to stdout AND scripts/smoke/results/concurrency-<ISO>.md
