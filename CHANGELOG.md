@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 - 2026-05-20
+- Removed `drive` from the `--access-level` enum on `descript publish` and from the batch manifest's `publish.access_level` type. The value was rejected by the Descript API on every Drive tested (the API allows only `public`, `unlisted`, `private`) and Descript's web UI exposes only those three options. The CLI now fails fast at parse time with a clear error instead of after a network round-trip.
+
+- Corrected cost-claim language in `CLAUDE.md` and the `descript-publish` and `descript-batch` skills. Publish is not billable on standard Descript plans (it creates a hosted share URL, which is a risk concern, not a cost concern). Batch is conditionally billable, only when a manifest includes items with `agent_prompt`. Pure import-and-publish batches are not themselves billable; the dry-run gate remains mandatory for risk reasons regardless.
+
+- Kept `drive` in the `PublishedProjectMetadata.privacy` response union, since the API may return that value on previously published items even though it no longer accepts it on new publish requests.
+
+- Added a hermetic CLI test asserting that `--access-level drive` is rejected locally without an API call (mirrors the existing `--resolution` rejection test).
+
 ## 0.2.0 - 2026-05-19
 - New `descript config edit` subcommand. Creates and locks (0600) the credentials file and opens it in your editor, so the API token never passes through chat.
 
