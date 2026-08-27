@@ -1065,3 +1065,16 @@ test("export --resume on a failed-download item (slug present) redownloads via s
   assert.ok(persisted.items[0].written.includes("md"));
   rmSync(dir, { recursive: true, force: true });
 });
+
+test("models command lists models and aliases", async () => {
+  installMockFetch([{ status: 200, json: {
+    availableModels: [{ id: "auto", cost: "medium" }, { id: "claude-haiku-4.5", cost: "low" }],
+    aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", description: "Tracks stable Anthropic Claude Haiku", cost: "low" }]
+  } }]);
+  const c = capture();
+  const code = await runCli(["models"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 0);
+  const out = c.out.join("");
+  assert.match(out, /claude-haiku-4\.5 \(low\)/);
+  assert.match(out, /claude-haiku -> claude-haiku-4\.5/);
+});

@@ -110,6 +110,18 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     return 0;
   },
 
+  async models(ctx) {
+    const r = await client(ctx).listAgentModels();
+    const lines: string[] = ["Available models:"];
+    for (const m of r.availableModels) lines.push(`  ${m.id} (${m.cost})`);
+    lines.push("Aliases (track the recommended version per tier):");
+    for (const a of r.aliases) {
+      lines.push(`  ${a.id} -> ${a.resolvesTo} (${a.cost})${a.description ? ` - ${a.description}` : ""}`);
+    }
+    emit(ctx.io, lines.join("\n"), r);
+    return 0;
+  },
+
   async config(ctx) {
     const sub = ctx.args[0];
     const configPath = ctx.env.DESCRIPT_CONFIG_PATH;
