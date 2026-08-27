@@ -847,6 +847,17 @@ test("models command lists models and aliases", async () => {
     assert.match(out, /claude-haiku-4\.5 \(low\)/);
     assert.match(out, /claude-haiku -> claude-haiku-4\.5/);
 });
+test("models --json emits the raw aliases payload", async () => {
+    installMockFetch([{ status: 200, json: {
+                availableModels: [{ id: "auto", cost: "medium" }, { id: "claude-haiku-4.5", cost: "low" }],
+                aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", description: "Tracks stable Anthropic Claude Haiku", cost: "low" }]
+            } }]);
+    const c = capture();
+    const code = await runCli(["models", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(c.out.join(""));
+    assert.equal(parsed.aliases[0].resolvesTo, "claude-haiku-4.5");
+});
 // =========================================================================
 // v0.5.0 - `descript transcript` command (Task 5)
 // Free, synchronous transcript export. No publish, no share URL.
@@ -901,6 +912,16 @@ test("transcript timecode flags build the timecodes object", async () => {
     const body = JSON.parse(calls[0].body);
     assert.deepEqual(body.timecodes, { frequency_seconds: 30, on_paragraphs: true });
 });
+test("transcript rejects a valueless --timecodes-every without calling the API", async () => {
+    // A valueless flag at the end of argv parses as boolean true (parseArgv),
+    // and Number(true) is 1, which would otherwise slip past the positive-number
+    // guard. installNoNetwork() proves no request is made once this is rejected.
+    installNoNetwork();
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "--format", "txt", "--timecodes-every"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
+    assert.match(c.out.join(""), /--timecodes-every must be a positive number of seconds/);
+});
 test("projects get lists existing publishes in human output", async () => {
     installMockFetch([{ status: 200, json: {
                 id: "p1", name: "Podcast", drive_id: "d", created_at: "a", updated_at: "b",
@@ -917,6 +938,18 @@ test("projects get lists existing publishes in human output", async () => {
     const out = c.out.join("");
     assert.match(out, /1 publish\(es\)/);
     assert.match(out, /video unlisted https:\/\/share\.descript\.com\/view\/abc \(composition c1\)/);
+});
+test("projects get with no publishes key omits the publishes section", async () => {
+    installMockFetch([{ status: 200, json: {
+                id: "p1", name: "Podcast", drive_id: "d", created_at: "a", updated_at: "b",
+                media_files: {}, compositions: []
+            } }]);
+    const c = capture();
+    const code = await runCli(["projects", "get", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const out = c.out.join("");
+    assert.doesNotMatch(out, /publish/);
+    assert.match(out, /Project /);
 });
 // Adapted from the task-7 brief: existing import tests that assert on the request
 // body (e.g. "import --url --folder sets folder_name") use --no-wait with a single

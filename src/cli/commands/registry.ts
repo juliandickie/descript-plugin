@@ -68,12 +68,12 @@ function buildTimecodes(ctx: Ctx): TranscriptTimecodeOptions | undefined | null 
   const t: TranscriptTimecodeOptions = {};
   if (every !== undefined) {
     const n = Number(every);
-    if (!Number.isFinite(n) || n <= 0) { fail(ctx.io, "--timecodes-every must be a positive number of seconds"); return null; }
+    if (typeof every !== "string" || !Number.isFinite(n) || n <= 0) { fail(ctx.io, "--timecodes-every must be a positive number of seconds"); return null; }
     t.frequency_seconds = n;
   }
   if (offset !== undefined) {
     const n = Number(offset);
-    if (!Number.isFinite(n)) { fail(ctx.io, "--timecodes-offset must be a number of seconds"); return null; }
+    if (typeof offset !== "string" || !Number.isFinite(n)) { fail(ctx.io, "--timecodes-offset must be a number of seconds"); return null; }
     t.offset_seconds = n;
   }
   if (onParagraphs) t.on_paragraphs = true;

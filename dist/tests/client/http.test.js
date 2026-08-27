@@ -75,3 +75,9 @@ test("requestRaw throws DescriptApiError on non-2xx", async () => {
     const http = new HttpClient({ token: "t" });
     await assert.rejects(() => http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } }), (e) => e instanceof DescriptApiError && e.status === 403);
 });
+test("requestRaw returns empty bytes for 204 No Content", async () => {
+    installMockFetch([{ status: 204 }]);
+    const http = new HttpClient({ token: "t" });
+    const r = await http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } });
+    assert.equal(r.bytes.length, 0);
+});

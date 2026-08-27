@@ -56,7 +56,7 @@ function buildTimecodes(ctx) {
     const t = {};
     if (every !== undefined) {
         const n = Number(every);
-        if (!Number.isFinite(n) || n <= 0) {
+        if (typeof every !== "string" || !Number.isFinite(n) || n <= 0) {
             fail(ctx.io, "--timecodes-every must be a positive number of seconds");
             return null;
         }
@@ -64,7 +64,7 @@ function buildTimecodes(ctx) {
     }
     if (offset !== undefined) {
         const n = Number(offset);
-        if (!Number.isFinite(n)) {
+        if (typeof offset !== "string" || !Number.isFinite(n)) {
             fail(ctx.io, "--timecodes-offset must be a number of seconds");
             return null;
         }

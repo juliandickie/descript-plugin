@@ -62,7 +62,7 @@ export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcRes
     return { jsonrpc: "2.0", id: req.id, result: {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "descript", version: "0.1.0" }
+      serverInfo: { name: "descript", version: "0.5.0" }
     } };
   }
   if (req.method === "tools/list") {
