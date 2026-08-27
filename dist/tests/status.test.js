@@ -11,10 +11,10 @@ test("reports authenticated with drive and api for the live /status shape", () =
     assert.match(line, /v1/);
     assert.match(line, /authenticat/i);
 });
-test("still reports authenticated for the documented {status:'ok'} shape", () => {
-    const line = formatStatus({ status: "ok" });
+test("reports the connected drive by name for the stabilized shape", () => {
+    const line = formatStatus({ drive_id: "d1", drive_name: "iDD", api_version: "v1" });
     assert.ok(!line.includes("undefined"), `line leaked "undefined": ${line}`);
-    assert.match(line, /ok/);
+    assert.match(line, /drive iDD/);
     assert.match(line, /authenticat/i);
 });
 test("does not crash or print 'undefined' when /status body is empty (204 / empty 2xx)", () => {

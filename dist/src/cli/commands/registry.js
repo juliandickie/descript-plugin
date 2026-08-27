@@ -32,6 +32,8 @@ const ACCESS_LEVEL = ["public", "unlisted", "private"];
 const JOB_TYPE = ["import/project_media", "agent"];
 const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"];
 const PROJECT_DIRECTION = ["asc", "desc"];
+const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"];
+const SPEAKER_LABELS = ["off", "changes", "every_paragraph"];
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx, flag, allowed) {
     const v = ctx.flags[flag];
@@ -41,6 +43,38 @@ function badEnum(ctx, flag, allowed) {
         return false;
     fail(ctx.io, `--${flag} must be one of: ${allowed.join(", ")}`);
     return true;
+}
+// Collects the four --timecodes-* flags into the API's timecodes object.
+// Returns undefined when no flag was passed, null after emitting a usage error.
+function buildTimecodes(ctx) {
+    const every = ctx.flags["timecodes-every"];
+    const offset = ctx.flags["timecodes-offset"];
+    const onParagraphs = ctx.flags["timecodes-on-paragraphs"] === true;
+    const onMarkers = ctx.flags["timecodes-on-markers"] === true;
+    if (every === undefined && offset === undefined && !onParagraphs && !onMarkers)
+        return undefined;
+    const t = {};
+    if (every !== undefined) {
+        const n = Number(every);
+        if (!Number.isFinite(n) || n <= 0) {
+            fail(ctx.io, "--timecodes-every must be a positive number of seconds");
+            return null;
+        }
+        t.frequency_seconds = n;
+    }
+    if (offset !== undefined) {
+        const n = Number(offset);
+        if (!Number.isFinite(n)) {
+            fail(ctx.io, "--timecodes-offset must be a number of seconds");
+            return null;
+        }
+        t.offset_seconds = n;
+    }
+    if (onParagraphs)
+        t.on_paragraphs = true;
+    if (onMarkers)
+        t.on_markers = true;
+    return t;
 }
 // Reads + JSON-parses a file, emitting a clear usage error on any failure.
 // Returns undefined on failure (JSON.parse never returns undefined on success).
@@ -98,6 +132,65 @@ export const COMMANDS = {
         emit(ctx.io, formatStatus(r), r);
         return 0;
     },
+    async models(ctx) {
+        const r = await client(ctx).listAgentModels();
+        const lines = ["Available models:"];
+        for (const m of r.availableModels)
+            lines.push(`  ${m.id} (${m.cost})`);
+        lines.push("Aliases (track the recommended version per tier):");
+        for (const a of r.aliases) {
+            lines.push(`  ${a.id} -> ${a.resolvesTo} (${a.cost})${a.description ? ` - ${a.description}` : ""}`);
+        }
+        emit(ctx.io, lines.join("\n"), r);
+        return 0;
+    },
+    async transcript(ctx) {
+        const projectId = ctx.args[0];
+        if (!projectId) {
+            fail(ctx.io, "Usage: descript transcript <project-id> [composition-id] --format txt|markdown|html|rtf|docx|srt [--out <path>]");
+            return 2;
+        }
+        if (badEnum(ctx, "format", TRANSCRIPT_FORMAT))
+            return 2;
+        if (badEnum(ctx, "speaker-labels", SPEAKER_LABELS))
+            return 2;
+        const format = ctx.flags.format;
+        if (typeof format !== "string") {
+            fail(ctx.io, "--format is required (txt|markdown|html|rtf|docx|srt)");
+            return 2;
+        }
+        const out = typeof ctx.flags.out === "string" ? ctx.flags.out : undefined;
+        if (format === "docx" && !out) {
+            fail(ctx.io, "--out <path> is required for docx (binary output cannot go to the terminal)");
+            return 2;
+        }
+        const timecodes = buildTimecodes(ctx);
+        if (timecodes === null)
+            return 2;
+        const req = {
+            project_id: projectId,
+            ...(ctx.args[1] ? { composition_id: ctx.args[1] } : {}),
+            format: format,
+            ...(typeof ctx.flags["speaker-labels"] === "string"
+                ? { include_speaker_labels: ctx.flags["speaker-labels"] } : {}),
+            ...(ctx.flags.markers === true ? { include_markers: true } : {}),
+            ...(timecodes ? { timecodes } : {})
+        };
+        const r = await client(ctx).exportTranscript(req);
+        if (out) {
+            writeFileSync(out, r.bytes);
+            emit(ctx.io, `Wrote ${out} (${r.bytes.length} bytes, ${format})`, { ok: true, path: out, bytes: r.bytes.length, format });
+            return 0;
+        }
+        const text = new TextDecoder().decode(r.bytes);
+        if (ctx.io.json) {
+            emit(ctx.io, text, { format, content: text });
+        }
+        else {
+            ctx.io.stdout(text.endsWith("\n") ? text : text + "\n");
+        }
+        return 0;
+    },
     async config(ctx) {
         const sub = ctx.args[0];
         const configPath = ctx.env.DESCRIPT_CONFIG_PATH;
@@ -120,7 +213,12 @@ export const COMMANDS = {
         const folderName = typeof ctx.flags.folder === "string" ? ctx.flags.folder : undefined;
         const language = typeof ctx.flags.language === "string" ? ctx.flags.language : undefined;
         const projectId = typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined;
-        const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}), ...(folderName ? { folder_name: folderName } : {}) };
+        const workspaceName = typeof ctx.flags.workspace === "string" ? ctx.flags.workspace : undefined;
+        if (workspaceName && projectId) {
+            fail(ctx.io, "--workspace only applies when creating a new project (drop it or drop --project-id)");
+            return 2;
+        }
+        const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}), ...(folderName ? { folder_name: folderName } : {}), ...(workspaceName ? { workspace_name: workspaceName } : {}) };
         const mediaJson = typeof ctx.flags.media === "string" ? ctx.flags.media : undefined;
         const file = typeof ctx.flags.file === "string" ? ctx.flags.file : undefined;
         const url = typeof ctx.flags.url === "string" ? ctx.flags.url : undefined;
@@ -350,7 +448,15 @@ export const COMMANDS = {
         }
         if (sub === "get") {
             const r = await c.getProject(String(ctx.args[1]));
-            emit(ctx.io, `Project ${r.name}`, r);
+            const pubs = r.publishes ?? [];
+            const lines = [`Project ${r.name}`];
+            if (pubs.length > 0) {
+                lines.push(`${pubs.length} publish(es):`);
+                for (const p of pubs) {
+                    lines.push(`  ${p.media_type} ${p.access_level} ${p.share_url} (composition ${p.composition_id})`);
+                }
+            }
+            emit(ctx.io, lines.join("\n"), r);
             return 0;
         }
         fail(ctx.io, "Usage: descript projects list|get <id>");

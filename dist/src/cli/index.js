@@ -5,8 +5,10 @@ const USAGE = `Usage: descript <command> [options]
 Commands:
   status                         Check API auth and service status
   config set|list|edit           Manage API token profiles (edit opens the file in your editor)
-  import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --media <json>, --compositions <json>)
+  import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --media <json>, --compositions <json>, --workspace <name> (Personal|General|custom, new projects only))
   agent --prompt [...]           Run an Underlord agent edit (--model <name>; see model list below)
+  models                         List available Underlord models and aliases (live from the API)
+  transcript <pid> [cid] [...]   Export a transcript file, free and instant, no publish (--format txt|markdown|html|rtf|docx|srt, --out <path>, --speaker-labels off|changes|every_paragraph, --markers, --timecodes-every/-offset/-on-paragraphs/-on-markers)
   publish --project-id [...]     Publish a composition (default --access-level private; elevate explicitly)
   jobs list|get <id>|cancel <id> Inspect or cancel jobs (list --project-id, --type, --created-after, --created-before, --limit 1-100, --cursor)
   projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
@@ -17,12 +19,11 @@ Commands:
   batch plan|run <manifest>      Bulk import/edit/publish (operator-only)
 
 Underlord models (descript agent --model <name>):
-  Documented as of 2026-05-20 - Auto, Claude Haiku 4.5, Claude Sonnet 4.6,
-  Claude Opus 4.6, Claude Opus 4.7, GPT 5.2, Gemini 3 Pro, Gemini 3.1 Pro.
-  Pass any string. The CLI does not validate the model name; Descript's API
-  is the source of truth and accepts new models as they ship. For credit
-  conservation use Claude Haiku 4.5. See docs/help-docs/Underlord ... in
-  Descript.md for the full table.
+  Run "descript models" for the live catalog - the API is the source of truth
+  and the list changes as models ship and retire. Aliases (claude-haiku,
+  claude-sonnet, claude-opus, gpt, gemini-pro, gemini-flash) track the
+  recommended version per tier; prefer them over pinned ids. For credit
+  conservation use the claude-haiku alias (low cost tier).
 
 Global options:
   --json            Machine-readable output

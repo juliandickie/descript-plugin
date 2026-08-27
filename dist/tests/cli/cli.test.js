@@ -11,11 +11,11 @@ function capture() {
     return { out, write: (s) => { out.push(s); } };
 }
 test("status command prints ok and exits 0", async () => {
-    installMockFetch([{ status: 200, json: { status: "ok" } }]);
+    installMockFetch([{ status: 200, json: { drive_id: "d1", drive_name: "iDD", api_version: "v1" } }]);
     const c = capture();
     const code = await runCli(["status", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
     assert.equal(code, 0);
-    assert.match(c.out.join(""), /"status": ?"ok"/);
+    assert.match(c.out.join(""), /"drive_name": ?"iDD"/);
 });
 test("missing token exits non-zero with a clear message", async () => {
     // Hermetic: never read the real ~/.config/descript, never touch the network.
@@ -834,4 +834,105 @@ test("export --resume on a failed-download item (slug present) redownloads via s
     assert.deepEqual(persisted.items[0].skipped, ["mp4"]);
     assert.ok(persisted.items[0].written.includes("md"));
     rmSync(dir, { recursive: true, force: true });
+});
+test("models command lists models and aliases", async () => {
+    installMockFetch([{ status: 200, json: {
+                availableModels: [{ id: "auto", cost: "medium" }, { id: "claude-haiku-4.5", cost: "low" }],
+                aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", description: "Tracks stable Anthropic Claude Haiku", cost: "low" }]
+            } }]);
+    const c = capture();
+    const code = await runCli(["models"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const out = c.out.join("");
+    assert.match(out, /claude-haiku-4\.5 \(low\)/);
+    assert.match(out, /claude-haiku -> claude-haiku-4\.5/);
+});
+// =========================================================================
+// v0.5.0 - `descript transcript` command (Task 5)
+// Free, synchronous transcript export. No publish, no share URL.
+// =========================================================================
+test("transcript prints text formats to stdout", async () => {
+    const { calls } = installMockFetch([{ status: 200, text: "Speaker: hello world", headers: { "content-type": "text/plain" } }]);
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "c1", "--format", "txt", "--speaker-labels", "changes"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.match(c.out.join(""), /Speaker: hello world/);
+    assert.equal(calls[0].body, JSON.stringify({ project_id: "p1", composition_id: "c1", format: "txt", include_speaker_labels: "changes" }));
+});
+test("transcript --json wraps content", async () => {
+    installMockFetch([{ status: 200, text: "1\n00:00:00,000 --> 00:00:02,000\nhi", headers: { "content-type": "application/x-subrip" } }]);
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "--format", "srt", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(c.out.join(""));
+    assert.equal(parsed.format, "srt");
+    assert.match(parsed.content, /00:00:02,000/);
+});
+test("transcript --out writes the file", async () => {
+    installMockFetch([{ status: 200, text: "# Transcript", headers: { "content-type": "text/markdown" } }]);
+    const dir = mkdtempSync(join(tmpdir(), "descript-transcript-"));
+    const out = join(dir, "t.md");
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "--format", "markdown", "--out", out], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    assert.equal(readFileSync(out, "utf8"), "# Transcript");
+    assert.match(c.out.join(""), /Wrote .*t\.md \(12 bytes, markdown\)/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("transcript docx without --out is a usage error before any API call", async () => {
+    installNoNetwork();
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "--format", "docx"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
+    assert.match(c.out.join(""), /--out .* required for docx/);
+});
+test("transcript requires --format and validates enums before any API call", async () => {
+    installNoNetwork();
+    const c = capture();
+    assert.equal(await runCli(["transcript", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
+    assert.equal(await runCli(["transcript", "p1", "--format", "pdf"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
+    assert.equal(await runCli(["transcript", "p1", "--format", "txt", "--timecodes-every", "-3"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
+});
+test("transcript timecode flags build the timecodes object", async () => {
+    const { calls } = installMockFetch([{ status: 200, text: "x", headers: { "content-type": "text/plain" } }]);
+    const c = capture();
+    const code = await runCli(["transcript", "p1", "--format", "txt", "--timecodes-every", "30", "--timecodes-on-paragraphs"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.deepEqual(body.timecodes, { frequency_seconds: 30, on_paragraphs: true });
+});
+test("projects get lists existing publishes in human output", async () => {
+    installMockFetch([{ status: 200, json: {
+                id: "p1", name: "Podcast", drive_id: "d", created_at: "a", updated_at: "b",
+                media_files: {}, compositions: [],
+                publishes: [{
+                        composition_id: "c1", share_url: "https://share.descript.com/view/abc",
+                        name: "Cut 1", media_type: "video", access_level: "unlisted",
+                        published_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-02T00:00:00Z"
+                    }]
+            } }]);
+    const c = capture();
+    const code = await runCli(["projects", "get", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const out = c.out.join("");
+    assert.match(out, /1 publish\(es\)/);
+    assert.match(out, /video unlisted https:\/\/share\.descript\.com\/view\/abc \(composition c1\)/);
+});
+// Adapted from the task-7 brief: existing import tests that assert on the request
+// body (e.g. "import --url --folder sets folder_name") use --no-wait with a single
+// submit fixture rather than a submit-then-poll sequence, so this follows that
+// established convention instead of the brief's two-response mock.
+test("import --workspace maps to workspace_name", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const c = capture();
+    const code = await runCli(["import", "--url", "https://x/y.mp4", "--workspace", "General", "--team-access", "view", "--no-wait", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.workspace_name, "General");
+});
+test("import --workspace with --project-id is a usage error before any API call", async () => {
+    installNoNetwork();
+    const c = capture();
+    const code = await runCli(["import", "--url", "https://x/y.mp4", "--workspace", "General", "--project-id", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+    assert.equal(code, 2);
 });

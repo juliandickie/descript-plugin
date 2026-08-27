@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 - 2026-08-27
+
+API surface refresh to the 2026-08-27 audit (`docs/field-reports/2026-08-27-api-drift-audit.md`).
+
+- **`descript transcript`** - new command and skill for POST /export/transcript. Free, synchronous transcript export (txt, markdown, html, rtf, docx, srt) with speaker-label, marker, and timecode options. No publish, no share URL, no credits - replaces the publish-then-WebVTT path for transcript-only workflows. Exposed as MCP tool `descript_transcript`.
+- **`descript models`** - new command for GET /agent/models. Live Underlord model catalog with cost tiers and aliases; the hardcoded model list is gone from `--help`. Prefer aliases (`claude-haiku`) over pinned ids. Exposed as MCP tool `descript_models`.
+- **`descript projects get`** now lists existing publishes (share URL, media type, access level per composition) - read a share URL without republishing.
+- **`descript import --workspace <name>`** - workspace placement for new projects (Personal, General, or custom).
+- **Types refresh** - status contract stabilized ({drive_id, drive_name, api_version}); agent results carry `resolved_model` and `conversation_id`; publish success carries `media_type`; `HttpClient.requestRaw` added for file-body endpoints. OpenAPI baseline refreshed to 2026-08-27 (prior baseline archived in `docs/legacy/`).
+- Not built on purpose - the `export/timeline` job type (dangling schema ref in the vendor spec, no public creation path yet).
+
 ## 0.4.1 - 2026-05-21
 
 `descript export --resume <path>` ships. Recovers an interrupted or partial export by replaying a prior `export-report.json` without re-publishing already-published compositions. Implementation follows the design spec at `docs/specs/2026-05-21-export-resume-design.md`.

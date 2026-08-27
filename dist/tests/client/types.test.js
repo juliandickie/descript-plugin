@@ -25,3 +25,28 @@ test("SubmitJobResponse and ImportRequest shapes compile", () => {
     assert.equal(r.job_id, "j");
     assert.ok(req.add_media["demo.mp4"]);
 });
+test("new v0.5.0 shapes compile", () => {
+    const models = {
+        availableModels: [{ id: "claude-haiku-4.5", cost: "low" }],
+        aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", cost: "low" }]
+    };
+    const treq = {
+        project_id: "p", format: "srt", include_markers: true,
+        timecodes: { frequency_seconds: 30, on_paragraphs: true }
+    };
+    const pub = {
+        composition_id: "c", share_url: "https://share.descript.com/view/x",
+        name: "Cut 1", media_type: "video", access_level: "private",
+        published_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z"
+    };
+    const agentOk = {
+        status: "success", agent_response: "done", project_changed: true,
+        resolved_model: "claude-haiku-4.5", conversation_id: "conv1"
+    };
+    const importReq = { project_name: "P", workspace_name: "General", add_media: {} };
+    assert.equal(models.aliases[0].id, "claude-haiku");
+    assert.equal(treq.format, "srt");
+    assert.equal(pub.media_type, "video");
+    assert.equal(agentOk.resolved_model, "claude-haiku-4.5");
+    assert.equal(importReq.workspace_name, "General");
+});
