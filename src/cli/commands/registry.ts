@@ -13,7 +13,7 @@ import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport, type ResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { ImportRequest, EditInDescriptBody, ListJobsQuery, ListProjectsQuery } from "../../client/types.js";
+import type { ImportRequest, EditInDescriptBody, ListJobsQuery, ListProjectsQuery, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
@@ -45,6 +45,8 @@ const ACCESS_LEVEL = ["public", "unlisted", "private"] as const;
 const JOB_TYPE = ["import/project_media", "agent"] as const;
 const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"] as const;
 const PROJECT_DIRECTION = ["asc", "desc"] as const;
+const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"] as const;
+const SPEAKER_LABELS = ["off", "changes", "every_paragraph"] as const;
 
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx: Ctx, flag: string, allowed: readonly string[]): boolean {
@@ -53,6 +55,30 @@ function badEnum(ctx: Ctx, flag: string, allowed: readonly string[]): boolean {
   if (typeof v === "string" && allowed.includes(v)) return false;
   fail(ctx.io, `--${flag} must be one of: ${allowed.join(", ")}`);
   return true;
+}
+
+// Collects the four --timecodes-* flags into the API's timecodes object.
+// Returns undefined when no flag was passed, null after emitting a usage error.
+function buildTimecodes(ctx: Ctx): TranscriptTimecodeOptions | undefined | null {
+  const every = ctx.flags["timecodes-every"];
+  const offset = ctx.flags["timecodes-offset"];
+  const onParagraphs = ctx.flags["timecodes-on-paragraphs"] === true;
+  const onMarkers = ctx.flags["timecodes-on-markers"] === true;
+  if (every === undefined && offset === undefined && !onParagraphs && !onMarkers) return undefined;
+  const t: TranscriptTimecodeOptions = {};
+  if (every !== undefined) {
+    const n = Number(every);
+    if (!Number.isFinite(n) || n <= 0) { fail(ctx.io, "--timecodes-every must be a positive number of seconds"); return null; }
+    t.frequency_seconds = n;
+  }
+  if (offset !== undefined) {
+    const n = Number(offset);
+    if (!Number.isFinite(n)) { fail(ctx.io, "--timecodes-offset must be a number of seconds"); return null; }
+    t.offset_seconds = n;
+  }
+  if (onParagraphs) t.on_paragraphs = true;
+  if (onMarkers) t.on_markers = true;
+  return t;
 }
 
 // Reads + JSON-parses a file, emitting a clear usage error on any failure.
@@ -119,6 +145,50 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       lines.push(`  ${a.id} -> ${a.resolvesTo} (${a.cost})${a.description ? ` - ${a.description}` : ""}`);
     }
     emit(ctx.io, lines.join("\n"), r);
+    return 0;
+  },
+
+  async transcript(ctx) {
+    const projectId = ctx.args[0];
+    if (!projectId) {
+      fail(ctx.io, "Usage: descript transcript <project-id> [composition-id] --format txt|markdown|html|rtf|docx|srt [--out <path>]");
+      return 2;
+    }
+    if (badEnum(ctx, "format", TRANSCRIPT_FORMAT)) return 2;
+    if (badEnum(ctx, "speaker-labels", SPEAKER_LABELS)) return 2;
+    const format = ctx.flags.format;
+    if (typeof format !== "string") {
+      fail(ctx.io, "--format is required (txt|markdown|html|rtf|docx|srt)");
+      return 2;
+    }
+    const out = typeof ctx.flags.out === "string" ? ctx.flags.out : undefined;
+    if (format === "docx" && !out) {
+      fail(ctx.io, "--out <path> is required for docx (binary output cannot go to the terminal)");
+      return 2;
+    }
+    const timecodes = buildTimecodes(ctx);
+    if (timecodes === null) return 2;
+    const req: TranscriptExportRequest = {
+      project_id: projectId,
+      ...(ctx.args[1] ? { composition_id: ctx.args[1] } : {}),
+      format: format as TranscriptFormat,
+      ...(typeof ctx.flags["speaker-labels"] === "string"
+        ? { include_speaker_labels: ctx.flags["speaker-labels"] as "off" | "changes" | "every_paragraph" } : {}),
+      ...(ctx.flags.markers === true ? { include_markers: true } : {}),
+      ...(timecodes ? { timecodes } : {})
+    };
+    const r = await client(ctx).exportTranscript(req);
+    if (out) {
+      writeFileSync(out, r.bytes);
+      emit(ctx.io, `Wrote ${out} (${r.bytes.length} bytes, ${format})`, { ok: true, path: out, bytes: r.bytes.length, format });
+      return 0;
+    }
+    const text = new TextDecoder().decode(r.bytes);
+    if (ctx.io.json) {
+      emit(ctx.io, text, { format, content: text });
+    } else {
+      ctx.io.stdout(text.endsWith("\n") ? text : text + "\n");
+    }
     return 0;
   },
 
