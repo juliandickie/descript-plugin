@@ -14,6 +14,11 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+export interface RawResponse {
+  bytes: Uint8Array;
+  contentType?: string;
+}
+
 const DEFAULT_BASE = "https://descriptapi.com/v1";
 const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -31,6 +36,30 @@ export class HttpClient {
   }
 
   async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
+    const resp = await this.send(method, path, opts, "application/json");
+    if (resp.status === 204) return undefined as T;
+    const text = await resp.text();
+    return (text ? JSON.parse(text) : undefined) as T;
+  }
+
+  // Same auth, query, retry, and error mapping as request(), but returns the
+  // response body as bytes for endpoints that serve files (POST /export/transcript
+  // returns txt/markdown/html/rtf/srt as text and docx as binary).
+  async requestRaw(method: string, path: string, opts: RequestOptions = {}): Promise<RawResponse> {
+    const resp = await this.send(method, path, opts, "*/*");
+    if (resp.status === 204) return { bytes: new Uint8Array(0) };
+    return {
+      bytes: new Uint8Array(await resp.arrayBuffer()),
+      contentType: resp.headers.get("content-type") ?? undefined
+    };
+  }
+
+  // Shared plumbing for request() and requestRaw(): builds the URL and
+  // headers, retries on 429 honoring Retry-After, and throws
+  // DescriptApiError on any other non-2xx status. Returns the raw Response
+  // (including 204, which counts as ok) so each caller extracts the body in
+  // its own format - parsed JSON for request(), raw bytes for requestRaw().
+  private async send(method: string, path: string, opts: RequestOptions, accept: string): Promise<Response> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) {
       if (v !== undefined) url.searchParams.set(k, String(v));
@@ -38,7 +67,7 @@ export class HttpClient {
     const headers: Record<string, string> = {
       ...(opts.headers ?? {}),
       authorization: `Bearer ${this.token}`,
-      accept: "application/json"
+      accept
     };
     let init: RequestInit = { method, headers };
     if (opts.body !== undefined) {
@@ -55,11 +84,7 @@ export class HttpClient {
         await this.sleep(wait);
         continue;
       }
-      if (resp.status === 204) return undefined as T;
-      if (resp.ok) {
-        const text = await resp.text();
-        return (text ? JSON.parse(text) : undefined) as T;
-      }
+      if (resp.ok) return resp;
       throw await toApiError(resp);
     }
   }

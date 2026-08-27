@@ -61,3 +61,36 @@ test("returns undefined for 204 No Content", async () => {
   const res = await http.request<undefined>("DELETE", "/jobs/j1");
   assert.equal(res, undefined);
 });
+
+test("requestRaw returns bytes and content type", async () => {
+  const { calls } = installMockFetch([
+    { status: 200, text: "Speaker: hello", headers: { "content-type": "text/plain; charset=utf-8" } }
+  ]);
+  const http = new HttpClient({ token: "t" });
+  const r = await http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } });
+  assert.equal(new TextDecoder().decode(r.bytes), "Speaker: hello");
+  assert.match(r.contentType ?? "", /text\/plain/);
+  assert.equal(calls[0]!.headers["accept"], "*/*");
+  assert.equal(calls[0]!.body, JSON.stringify({ project_id: "p", format: "txt" }));
+});
+
+test("requestRaw retries 429 with Retry-After then succeeds", async () => {
+  const sleeps: number[] = [];
+  installMockFetch([
+    { status: 429, headers: { "retry-after": "2" } },
+    { status: 200, text: "ok" }
+  ]);
+  const http = new HttpClient({ token: "t", sleep: async (ms) => { sleeps.push(ms); } });
+  const r = await http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } });
+  assert.equal(new TextDecoder().decode(r.bytes), "ok");
+  assert.deepEqual(sleeps, [2000]);
+});
+
+test("requestRaw throws DescriptApiError on non-2xx", async () => {
+  installMockFetch([{ status: 403, json: { error: "forbidden", message: "no drive access" } }]);
+  const http = new HttpClient({ token: "t" });
+  await assert.rejects(
+    () => http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } }),
+    (e: unknown) => e instanceof DescriptApiError && e.status === 403
+  );
+});
