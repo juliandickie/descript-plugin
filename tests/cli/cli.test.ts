@@ -1144,3 +1144,21 @@ test("transcript timecode flags build the timecodes object", async () => {
   const body = JSON.parse(calls[0]!.body!);
   assert.deepEqual(body.timecodes, { frequency_seconds: 30, on_paragraphs: true });
 });
+
+test("projects get lists existing publishes in human output", async () => {
+  installMockFetch([{ status: 200, json: {
+    id: "p1", name: "Podcast", drive_id: "d", created_at: "a", updated_at: "b",
+    media_files: {}, compositions: [],
+    publishes: [{
+      composition_id: "c1", share_url: "https://share.descript.com/view/abc",
+      name: "Cut 1", media_type: "video", access_level: "unlisted",
+      published_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-02T00:00:00Z"
+    }]
+  } }]);
+  const c = capture();
+  const code = await runCli(["projects", "get", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 0);
+  const out = c.out.join("");
+  assert.match(out, /1 publish\(es\)/);
+  assert.match(out, /video unlisted https:\/\/share\.descript\.com\/view\/abc \(composition c1\)/);
+});

@@ -380,7 +380,19 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       emit(ctx.io, `${r.data.length} project(s)`, r);
       return 0;
     }
-    if (sub === "get") { const r = await c.getProject(String(ctx.args[1])); emit(ctx.io, `Project ${r.name}`, r); return 0; }
+    if (sub === "get") {
+      const r = await c.getProject(String(ctx.args[1]));
+      const pubs = r.publishes ?? [];
+      const lines = [`Project ${r.name}`];
+      if (pubs.length > 0) {
+        lines.push(`${pubs.length} publish(es):`);
+        for (const p of pubs) {
+          lines.push(`  ${p.media_type} ${p.access_level} ${p.share_url} (composition ${p.composition_id})`);
+        }
+      }
+      emit(ctx.io, lines.join("\n"), r);
+      return 0;
+    }
     fail(ctx.io, "Usage: descript projects list|get <id>");
     return 2;
   },
