@@ -14,11 +14,11 @@ function capture() {
 }
 
 test("status command prints ok and exits 0", async () => {
-  installMockFetch([{ status: 200, json: { status: "ok" } }]);
+  installMockFetch([{ status: 200, json: { drive_id: "d1", drive_name: "iDD", api_version: "v1" } }]);
   const c = capture();
   const code = await runCli(["status", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
   assert.equal(code, 0);
-  assert.match(c.out.join(""), /"status": ?"ok"/);
+  assert.match(c.out.join(""), /"drive_name": ?"iDD"/);
 });
 
 test("missing token exits non-zero with a clear message", async () => {

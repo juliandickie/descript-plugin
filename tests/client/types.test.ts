@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { JobStatus, SubmitJobResponse, ImportRequest } from "../../src/client/types.js";
+import type { JobStatus, SubmitJobResponse, ImportRequest, AgentModelsResponse, TranscriptExportRequest, ProjectPublish, AgentSuccessResult } from "../../src/client/types.js";
 
 test("JobStatus discriminates on job_type", () => {
   const job: JobStatus = {
@@ -27,4 +27,30 @@ test("SubmitJobResponse and ImportRequest shapes compile", () => {
   };
   assert.equal(r.job_id, "j");
   assert.ok(req.add_media["demo.mp4"]);
+});
+
+test("new v0.5.0 shapes compile", () => {
+  const models: AgentModelsResponse = {
+    availableModels: [{ id: "claude-haiku-4.5", cost: "low" }],
+    aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", cost: "low" }]
+  };
+  const treq: TranscriptExportRequest = {
+    project_id: "p", format: "srt", include_markers: true,
+    timecodes: { frequency_seconds: 30, on_paragraphs: true }
+  };
+  const pub: ProjectPublish = {
+    composition_id: "c", share_url: "https://share.descript.com/view/x",
+    name: "Cut 1", media_type: "video", access_level: "private",
+    published_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-01T00:00:00Z"
+  };
+  const agentOk: AgentSuccessResult = {
+    status: "success", agent_response: "done", project_changed: true,
+    resolved_model: "claude-haiku-4.5", conversation_id: "conv1"
+  };
+  const importReq: ImportRequest = { project_name: "P", workspace_name: "General", add_media: {} };
+  assert.equal(models.aliases[0]!.id, "claude-haiku");
+  assert.equal(treq.format, "srt");
+  assert.equal(pub.media_type, "video");
+  assert.equal(agentOk.resolved_model, "claude-haiku-4.5");
+  assert.equal(importReq.workspace_name, "General");
 });

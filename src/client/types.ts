@@ -31,6 +31,7 @@ export interface ImportComposition {
 export interface ImportRequest {
   project_id?: string;
   project_name?: string;
+  workspace_name?: string;
   team_access?: "edit" | "comment" | "view" | "none";
   folder_name?: string;
   add_media: Record<string, ImportMediaItem>;
@@ -69,6 +70,9 @@ export interface SubmitJobResponse {
   project_id: string;
   project_url: string;
   upload_urls?: Record<string, UploadUrlEntry>;
+  drive_name?: string;
+  conversation_id?: string;
+  resolved_model?: string;
 }
 
 export interface ImportSuccessResult {
@@ -88,11 +92,15 @@ export interface AgentSuccessResult {
   project_changed: boolean;
   media_seconds_used?: number;
   ai_credits_used?: number;
+  conversation_id?: string;
+  resolved_model?: string;
 }
 export interface AgentErrorResult {
   status: "error";
   error_message: string;
   error_code?: string;
+  conversation_id?: string;
+  resolved_model?: string;
 }
 export interface PublishSuccessResult {
   status: "success";
@@ -100,6 +108,7 @@ export interface PublishSuccessResult {
   share_url: string;
   download_url?: string;
   download_url_expires_at?: string;
+  media_type?: "Video" | "Audio";
 }
 export interface PublishErrorResult {
   status: "error";
@@ -191,14 +200,53 @@ export interface ProjectDetail {
   folder_path?: string;
   media_files: Record<string, { type: "audio" | "video" | "image" | "sequence" | "other"; duration?: number }>;
   compositions: Array<{ id: string; name: string; duration?: number; media_type?: string }>;
+  publishes?: ProjectPublish[];
 }
-// The live /status endpoint is vendor-flagged "work in progress": its actual
-// payload is { drive_id, api_version } while its OpenAPI schema documents
-// { status: "ok" }, and a 204/empty 2xx is also possible. All fields are
-// therefore optional to reflect the unstable contract.
+
+// Item of ProjectDetail.publishes per the 2026-08-27 spec (all seven fields
+// required server-side; share_url is the stable republish-keyed link).
+export interface ProjectPublish {
+  composition_id: string;
+  share_url: string;
+  name: string;
+  media_type: "video" | "audio" | "audiogram";
+  access_level: "public" | "unlisted" | "drive" | "private" | "password";
+  published_at: string;
+  updated_at: string;
+}
+
+export type ModelCostTier = "low" | "medium" | "high";
+// NOTE - this endpoint is camelCase on the wire (availableModels, resolvesTo),
+// unlike the snake_case used everywhere else. Verified live 2026-08-27.
+export interface AgentModel { id: string; cost: ModelCostTier; }
+export interface AgentModelAlias { id: string; resolvesTo: string; description?: string; cost: ModelCostTier; }
+export interface AgentModelsResponse {
+  availableModels: AgentModel[];
+  aliases: AgentModelAlias[];
+}
+
+export type TranscriptFormat = "txt" | "markdown" | "html" | "rtf" | "docx" | "srt";
+export interface TranscriptTimecodeOptions {
+  frequency_seconds?: number;
+  offset_seconds?: number;
+  on_markers?: boolean;
+  on_paragraphs?: boolean;
+}
+export interface TranscriptExportRequest {
+  project_id: string;
+  composition_id?: string;
+  format: TranscriptFormat;
+  include_speaker_labels?: "off" | "changes" | "every_paragraph";
+  include_markers?: boolean;
+  timecodes?: TranscriptTimecodeOptions;
+}
+// GET /status stabilized in the 2026-08-27 spec refresh - documented contract is
+// { drive_id, drive_name, api_version } (all required server-side). Fields stay
+// optional here so an older or degraded payload never throws; any 2xx still
+// proves the token authenticated.
 export interface StatusResponse {
-  status?: "ok";
   drive_id?: string;
+  drive_name?: string;
   api_version?: string;
 }
 export interface PublishedProjectMetadata {

@@ -4,8 +4,11 @@ import * as projects from "./projects.js";
 import { getStatus } from "./status.js";
 import { getPublishedProjectMetadata } from "./published.js";
 import { postEditInDescriptSchema } from "./editInDescript.js";
+import { listAgentModels } from "./models.js";
+import { exportTranscript } from "./transcript.js";
 import type {
-  ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody
+  ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody,
+  TranscriptExportRequest
 } from "./types.js";
 
 export class DescriptClient {
@@ -24,6 +27,8 @@ export class DescriptClient {
   getStatus() { return getStatus(this.http); }
   getPublishedProjectMetadata(slug: string) { return getPublishedProjectMetadata(this.http, slug); }
   postEditInDescriptSchema(body: EditInDescriptBody) { return postEditInDescriptSchema(this.http, body); }
+  listAgentModels() { return listAgentModels(this.http); }
+  exportTranscript(req: TranscriptExportRequest) { return exportTranscript(this.http, req); }
 }
 
 export { HttpClient } from "./http.js";

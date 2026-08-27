@@ -5,6 +5,8 @@ import { listProjects, getProject } from "../../src/client/projects.js";
 import { getStatus } from "../../src/client/status.js";
 import { getPublishedProjectMetadata } from "../../src/client/published.js";
 import { postEditInDescriptSchema } from "../../src/client/editInDescript.js";
+import { listAgentModels } from "../../src/client/models.js";
+import { exportTranscript } from "../../src/client/transcript.js";
 import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 
 afterEach(() => restoreFetch());
@@ -25,8 +27,8 @@ test("getProject GETs /projects/{id}", async () => {
 });
 
 test("getStatus GETs /status", async () => {
-  installMockFetch([{ status: 200, json: { status: "ok" } }]);
-  assert.deepEqual(await getStatus(http()), { status: "ok" });
+  installMockFetch([{ status: 200, json: { drive_id: "d1", drive_name: "iDD", api_version: "v1" } }]);
+  assert.deepEqual(await getStatus(http()), { drive_id: "d1", drive_name: "iDD", api_version: "v1" });
 });
 
 test("getPublishedProjectMetadata GETs /published_projects/{slug}", async () => {
@@ -106,4 +108,23 @@ test("listProjects serializes all filters together", async () => {
   assert.ok(calls[0]!.url.includes("sort=updated_at"), "expected sort=updated_at: " + calls[0]!.url);
   assert.ok(calls[0]!.url.includes("direction=asc"), "expected direction=asc: " + calls[0]!.url);
   assert.ok(calls[0]!.url.includes("limit=50"), "expected limit=50: " + calls[0]!.url);
+});
+
+test("listAgentModels GETs /agent/models", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: {
+    availableModels: [{ id: "auto", cost: "medium" }, { id: "claude-haiku-4.5", cost: "low" }],
+    aliases: [{ id: "claude-haiku", resolvesTo: "claude-haiku-4.5", description: "Tracks stable Anthropic Claude Haiku", cost: "low" }]
+  } }]);
+  const r = await listAgentModels(http());
+  assert.equal(r.aliases[0]!.resolvesTo, "claude-haiku-4.5");
+  assert.equal(calls[0]!.url, "https://descriptapi.com/v1/agent/models");
+  assert.equal(calls[0]!.method, "GET");
+});
+
+test("exportTranscript POSTs /export/transcript and returns bytes", async () => {
+  const { calls } = installMockFetch([{ status: 200, text: "# Transcript", headers: { "content-type": "text/markdown" } }]);
+  const r = await exportTranscript(http(), { project_id: "p1", format: "markdown", include_speaker_labels: "changes" });
+  assert.equal(new TextDecoder().decode(r.bytes), "# Transcript");
+  assert.equal(calls[0]!.url, "https://descriptapi.com/v1/export/transcript");
+  assert.equal(calls[0]!.body, JSON.stringify({ project_id: "p1", format: "markdown", include_speaker_labels: "changes" }));
 });
