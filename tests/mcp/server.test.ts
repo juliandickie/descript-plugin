@@ -4,7 +4,7 @@ import { handleRpc, handleLine, TOOLS } from "../../src/mcp/server.js";
 
 test("lists a tool per CLI surface", () => {
   const names = TOOLS.map((t) => t.name);
-  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch"]) {
+  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript"]) {
     assert.ok(names.includes(n), `missing tool ${n}`);
   }
 });
@@ -22,9 +22,9 @@ test("tools/list returns the tool array", async () => {
 test("tools/call invokes the CLI and returns stdout", async () => {
   const r = await handleRpc(
     { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "descript_status", arguments: {} } },
-    async (argv) => { assert.deepEqual(argv, ["status", "--json"]); return { code: 0, stdout: '{"status":"ok"}', stderr: "" }; }
+    async (argv) => { assert.deepEqual(argv, ["status", "--json"]); return { code: 0, stdout: '{"drive_name":"iDD"}', stderr: "" }; }
   );
-  assert.match(r!.result.content[0].text, /"status":"ok"/);
+  assert.match(r!.result.content[0].text, /"drive_name":"iDD"/);
 });
 
 test("notifications (no id) produce no response", async () => {
@@ -65,4 +65,21 @@ test("tools/call with non-object arguments returns JSON-RPC -32602", async () =>
     async () => ({ code: 0, stdout: "", stderr: "" })
   );
   assert.equal(r!.error!.code, -32602);
+});
+
+test("descript_transcript argv builder maps args to CLI flags", () => {
+  const tool = TOOLS.find((t) => t.name === "descript_transcript")!;
+  assert.deepEqual(
+    tool.argv({ project_id: "p1", composition_id: "c1", format: "markdown", speaker_labels: "changes", markers: true }),
+    ["transcript", "p1", "c1", "--format", "markdown", "--speaker-labels", "changes", "--markers", "--json"]
+  );
+  assert.deepEqual(
+    tool.argv({ project_id: "p1", format: "docx", out: "/tmp/t.docx" }),
+    ["transcript", "p1", "--format", "docx", "--out", "/tmp/t.docx", "--json"]
+  );
+});
+
+test("descript_models argv builder", () => {
+  const tool = TOOLS.find((t) => t.name === "descript_models")!;
+  assert.deepEqual(tool.argv({}), ["models", "--json"]);
 });

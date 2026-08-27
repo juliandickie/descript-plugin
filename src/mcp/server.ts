@@ -26,7 +26,18 @@ export const TOOLS: Tool[] = [
   { name: "descript_projects", description: "List or fetch projects. args: sub=list|get, id", argv: (a) => ["projects", String(a.sub ?? "list"), ...(a.id ? [String(a.id)] : []), "--json"] },
   { name: "descript_published", description: "Get published project metadata. arg: slug", argv: (a) => ["published", String(a.slug ?? ""), "--json"] },
   { name: "descript_edit_in_descript", description: "Partner-gated import URL exchange (flag: schema path)", argv: passthrough(["edit-in-descript"]) },
-  { name: "descript_batch", description: "Bulk runner. args: sub=plan|run, file; flag confirm", argv: (a) => ["batch", String(a.sub ?? "plan"), String(a.file ?? ""), ...(a.confirm ? ["--confirm"] : []), "--json"] }
+  { name: "descript_batch", description: "Bulk runner. args: sub=plan|run, file; flag confirm", argv: (a) => ["batch", String(a.sub ?? "plan"), String(a.file ?? ""), ...(a.confirm ? ["--confirm"] : []), "--json"] },
+  { name: "descript_models", description: "List available Underlord agent models and aliases (live catalog)", argv: passthrough(["models"]) },
+  { name: "descript_transcript", description: "Export a composition transcript, free and instant, no publish. args: project_id, composition_id?, format=txt|markdown|html|rtf|docx|srt, out? (file path; required for docx), speaker_labels?=off|changes|every_paragraph, markers?", argv: (a) => [
+      "transcript",
+      String(a.project_id ?? ""),
+      ...(a.composition_id ? [String(a.composition_id)] : []),
+      "--format", String(a.format ?? "txt"),
+      ...(a.speaker_labels ? ["--speaker-labels", String(a.speaker_labels)] : []),
+      ...(a.markers === true ? ["--markers"] : []),
+      ...(a.out ? ["--out", String(a.out)] : []),
+      "--json"
+    ] }
 ];
 
 export interface ExecResult { code: number; stdout: string; stderr: string; }
