@@ -13,7 +13,7 @@ Run a one-shot Underlord agent edit.
 
 2. **Underlord queries as well as edits.** Read-only prompts work ("which compositions are shorter than 30 seconds", "list every composition that has not been published"). Edit is the default framing in the upstream docs but the capability surface is broader.
 
-3. **AI credit cost is small per call and is confirmable.** A typical chat message uses a few credits; a tool action uses 5-30 depending on the operation. For credit conservation, Haiku 4.5 is the cost-efficient model choice. Cost is a parameter to confirm, not a reason to dismiss the capability.
+3. **AI credit cost is small per call and is confirmable.** A typical chat message uses a few credits; a tool action uses 5-30 depending on the operation. For credit conservation pass `--model claude-haiku` (an alias that tracks the current recommended low-cost model; run `descript models` for the live catalog). Cost is a parameter to confirm, not a reason to dismiss the capability.
 
 ## When to Use
 

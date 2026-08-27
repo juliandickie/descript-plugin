@@ -10,6 +10,7 @@ End-to-end pipeline: publish a composition (or many), download the rendered medi
 ## When to Use
 - "Download this composition", "give me the MP4 + transcript", "export everything in project X for chapter generation"
 - NOT for: re-pulling transcripts from a composition that has already been published (use descript-download-published - read-only, free, no fresh publish)
+- Transcript or captions ONLY (no media file needed)? Route to descript-transcript instead - it is free and creates no share URL. This skill's srt/md come from a publish.
 
 ## Instructions
 1. Confirm scope. One of:

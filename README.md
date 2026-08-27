@@ -22,13 +22,13 @@ Or set DESCRIPT_API_TOKEN, or the plugin api_token config.
 
 ## CLI
 
-descript status, config, import, agent, publish, jobs, projects, published, edit-in-descript, batch
+descript status, config, import, agent, models, transcript, publish, jobs, projects, published, download-published, export, edit-in-descript, batch
 
 Global flags: --json, --no-wait, --token, --profile.
 
 ## Skills
 
-descript-setup, descript-import, descript-edit, descript-publish, descript-jobs, descript-batch, descript-api-reference. Edit, publish, and batch are cost-gated.
+descript-setup, descript-import, descript-edit, descript-transcript, descript-publish, descript-jobs, descript-export, descript-download-published, descript-batch, descript-api-reference. Edit, publish, export, and batch are cost- or confirmation-gated; transcript is free and ungated.
 
 ## Tip - Per-cue density for chapter generation
 

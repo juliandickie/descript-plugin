@@ -25,4 +25,7 @@ Import media by public URL or local file and create a Descript project.
 - `--language <code>` - ISO 639-1 language code applied to the imported media item for transcription (e.g. `--language es` for Spanish, `--language fr` for French). Applied to URL imports and `--file` uploads; not applied when using raw `--media` JSON (the caller controls per-item language in that case).
 - `--project-id <id>` - import additional media into an existing project instead of creating a new one. When set, `--name` and `--compositions` are ignored and `add_compositions` is omitted from the request. Use with `--url` or `--media`.
 
+## Optional Flags (v0.5.0)
+- `--workspace <name>` places a NEW project in a workspace (`Personal`, `General`, or a custom workspace name; case-insensitive). Personal requires `--team-access none` or omitted; General/custom require edit|comment|view (default view). Not valid with `--project-id`.
+
 Import consumes media processing but does not spend AI credits.

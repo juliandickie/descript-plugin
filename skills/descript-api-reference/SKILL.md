@@ -10,7 +10,7 @@ Background knowledge for building correct Descript requests. The plugin's CLI is
 
 ## CLI map
 
-descript status, config, import, agent, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
+descript status, config, import, agent, models, transcript, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
 
 ## Per-endpoint highest-impact delta
 
@@ -34,7 +34,9 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 
 - The full Underlord model list (Auto plus seven specific options) lives in the same help-docs file. Pass `--model` through as-is; the API validates.
 
-- AI credit costs per operation live in `docs/help-docs/Track and understand your media minutes and AI credits.md`. Haiku 4.5 is the cost-efficient default for credit-sensitive workflows.
+- Job results now include `resolved_model` (the canonical id that ran; `auto` requests report `auto`) and `conversation_id`. Model ids are canonical (`claude-haiku-4.5`) with tier aliases (`claude-haiku`) - run `descript models` for the live catalog instead of trusting any static list.
+
+- AI credit costs per operation live in `docs/help-docs/Track and understand your media minutes and AI credits.md`. The `claude-haiku` alias is the cost-efficient default for credit-sensitive workflows (low tier; run `descript models` for the live catalog).
 
 - Prompt-writing framework (Action / Context / Tone / Format / Constraints) - see `docs/help-docs/How to write effective prompts for Descript's AI features.md`. The API has no `@` mention affordance, so API callers describe context in prose.
 
@@ -62,7 +64,15 @@ State is `queued`, `running`, `stopped`, `cancelled`. Completion is `job_state =
 
 ### status (GET /status)
 
-Vendor-flagged "work in progress". Live payload is `{ drive_id, api_version }`; OpenAPI says `{ status: "ok" }`; an empty 2xx is possible. All `StatusResponse` fields are optional to reflect the unstable contract.
+Stabilized in the 2026-08-27 spec refresh - documented payload is `{ drive_id, drive_name, api_version }`, all required server-side; the plugin keeps its fields optional for resilience.
+
+### models (GET /agent/models)
+
+Free, read-only. Returns `availableModels` (id + cost tier low|medium|high) and `aliases` (id, resolvesTo, description, cost). The live response is the source of truth for what `agent --model` accepts - the catalog changes as models ship and retire. Aliases track the recommended version per tier (e.g. `claude-haiku` always resolves to the current recommended Haiku); prefer aliases over pinned ids in prompts and manifests. NOTE - this endpoint is camelCase on the wire, unlike the rest of the API.
+
+### transcript (POST /export/transcript)
+
+Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
 
 ### published (GET /published_projects/{slug})
 
@@ -97,6 +107,10 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 - `export` (skill - `descript-export`) - triggers one publish per composition. Same risk profile as `publish`, multiplied. Model-invocable with in-skill confirmation; defaults access-level to `private`.
 
 - `download-published` (skill - `descript-download-published`) - read-only, free, unrestricted.
+
+- `transcript` (skill - `descript-transcript`) - free, read-only, no artifacts. Unrestricted.
+
+- `models` (no dedicated skill; documented here) - free, read-only. Unrestricted.
 
 - Everything else (`status`, `config`, `import`, `jobs list/get/cancel`, `projects list/get`, `published`, `edit-in-descript`) is read-only or non-billable, unrestricted.
 
