@@ -1,6 +1,6 @@
 # descript
 
-Full programmatic access to the Descript API for Claude Code. A Node/TypeScript CLI covering all 11 endpoints plus polling, the three-step signed-URL upload, and a bulk pipeline runner, wrapped by skills and an optional MCP shim.
+Full programmatic access to the Descript API for Claude Code. A Node/TypeScript CLI covering the full Descript API surface (refreshed 2026-08-27) plus polling, the three-step signed-URL upload, and a bulk pipeline runner, wrapped by skills and an optional MCP shim.
 
 ## Install (standalone)
 
