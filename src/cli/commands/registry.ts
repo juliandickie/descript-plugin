@@ -211,7 +211,12 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const folderName = typeof ctx.flags.folder === "string" ? ctx.flags.folder : undefined;
     const language = typeof ctx.flags.language === "string" ? ctx.flags.language : undefined;
     const projectId = typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined;
-    const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}), ...(folderName ? { folder_name: folderName } : {}) };
+    const workspaceName = typeof ctx.flags.workspace === "string" ? ctx.flags.workspace : undefined;
+    if (workspaceName && projectId) {
+      fail(ctx.io, "--workspace only applies when creating a new project (drop it or drop --project-id)");
+      return 2;
+    }
+    const extra = { ...(callbackUrl ? { callback_url: callbackUrl } : {}), ...(teamAccess ? { team_access: teamAccess } : {}), ...(folderName ? { folder_name: folderName } : {}), ...(workspaceName ? { workspace_name: workspaceName } : {}) };
     const mediaJson = typeof ctx.flags.media === "string" ? ctx.flags.media : undefined;
     const file = typeof ctx.flags.file === "string" ? ctx.flags.file : undefined;
     const url = typeof ctx.flags.url === "string" ? ctx.flags.url : undefined;

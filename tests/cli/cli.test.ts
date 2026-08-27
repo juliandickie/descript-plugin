@@ -1162,3 +1162,27 @@ test("projects get lists existing publishes in human output", async () => {
   assert.match(out, /1 publish\(es\)/);
   assert.match(out, /video unlisted https:\/\/share\.descript\.com\/view\/abc \(composition c1\)/);
 });
+
+// Adapted from the task-7 brief: existing import tests that assert on the request
+// body (e.g. "import --url --folder sets folder_name") use --no-wait with a single
+// submit fixture rather than a submit-then-poll sequence, so this follows that
+// established convention instead of the brief's two-response mock.
+test("import --workspace maps to workspace_name", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+  const c = capture();
+  const code = await runCli(
+    ["import", "--url", "https://x/y.mp4", "--workspace", "General", "--team-access", "view", "--no-wait", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }
+  );
+  assert.equal(code, 0);
+  const body = JSON.parse(calls[0]!.body!);
+  assert.equal(body.workspace_name, "General");
+});
+
+test("import --workspace with --project-id is a usage error before any API call", async () => {
+  installNoNetwork();
+  const c = capture();
+  const code = await runCli(["import", "--url", "https://x/y.mp4", "--workspace", "General", "--project-id", "p1"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 2);
+});

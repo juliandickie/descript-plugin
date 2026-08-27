@@ -7,7 +7,7 @@ const USAGE = `Usage: descript <command> [options]
 Commands:
   status                         Check API auth and service status
   config set|list|edit           Manage API token profiles (edit opens the file in your editor)
-  import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --media <json>, --compositions <json>)
+  import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --media <json>, --compositions <json>, --workspace <name> (Personal|General|custom, new projects only))
   agent --prompt [...]           Run an Underlord agent edit (--model <name>; see model list below)
   models                         List available Underlord models and aliases (live from the API)
   transcript <pid> [cid] [...]   Export a transcript file, free and instant, no publish (--format txt|markdown|html|rtf|docx|srt, --out <path>, --speaker-labels off|changes|every_paragraph, --markers, --timecodes-every/-offset/-on-paragraphs/-on-markers)
