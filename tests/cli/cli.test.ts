@@ -1,7 +1,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { runCli, parseArgv } from "../../src/cli/index.js";
-import { installMockFetch, restoreFetch, installNoNetwork } from "../helpers/mockFetch.js";
+import { installMockFetch, restoreFetch, installNoNetwork, installMockFetchByUrl } from "../helpers/mockFetch.js";
 import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1251,4 +1251,59 @@ test("import --workspace with --project-id is a usage error before any API call"
   const code = await runCli(["import", "--url", "https://x/y.mp4", "--workspace", "General", "--project-id", "p1"],
     { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
   assert.equal(code, 2);
+});
+
+// =========================================================================
+// v0.6.0 - `descript translate` command (Task 4)
+// Captures the language-to-composition mapping at creation time - snapshot
+// compositions, run a self-contained agent prompt, diff by id after. See
+// docs/field-reports/2026-08-27-translated-srt-findings.md.
+// =========================================================================
+
+test("translate command exits 0 with mapping on success and 4 when nothing was created", async () => {
+  // success path
+  installMockFetchByUrl([
+    { match: "/projects/p1", responses: [
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }] } },
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }, { id: "newfr", name: "Vidéo", media_type: "video" }] } }
+    ]},
+    { match: "/jobs/agent", responses: [{ status: 201, json: { job_id: "ja", drive_id: "d", project_id: "p1", project_url: "u" } }]},
+    { match: "/jobs/ja", responses: [{ status: 200, json: { job_id: "ja", job_type: "agent", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", agent_response: "Done", project_changed: true, ai_credits_used: 9.3, resolved_model: "claude-haiku-4.5" } } }]}
+  ]);
+  const c = capture();
+  const code = await runCli(["translate", "p1", "orig", "--language", "French (Canada)"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 0);
+  const out = c.out.join("");
+  assert.match(out, /French \(Canada\)/);
+  assert.match(out, /newfr/);
+  assert.match(out, /credits: 9\.3/);
+});
+
+// Exit-4 question path (brief's Step 1 tail): the agent job completes ok but
+// declines or asks a question instead of creating a new composition. Uses
+// the zero-new-compositions mock shape from the workflow test above.
+test("translate command exits 4 when the agent asks a question and creates nothing", async () => {
+  installMockFetchByUrl([
+    { match: "/projects/p1", responses: [
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }] } },
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }] } }
+    ]},
+    { match: "/jobs/agent", responses: [{ status: 201, json: { job_id: "ja", drive_id: "d", project_id: "p1", project_url: "u" } }]},
+    { match: "/jobs/ja", responses: [{ status: 200, json: { job_id: "ja", job_type: "agent", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", agent_response: "Would you like me to add captions first?", project_changed: false, ai_credits_used: 5.4 } } }]}
+  ]);
+  const c = capture();
+  const code = await runCli(["translate", "p1", "--language", "German"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 4);
+  const out = c.out.join("");
+  assert.match(out, /add captions first/);
+});
+
+test("translate usage gates fire before any API call", async () => {
+  installNoNetwork();
+  const c = capture();
+  assert.equal(await runCli(["translate"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
+  assert.equal(await runCli(["translate", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
+  assert.equal(await runCli(["translate", "p1", "--language", "German", "--no-wait"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
 });
