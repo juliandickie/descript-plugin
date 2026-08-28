@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { DescriptClient } from "../client/index.js";
 import { exportPublished, type ExportFormat, type ExportPublishedResult, type ExportPublishedOptions } from "./exportPublished.js";
 import { publishAndWait } from "./publishAndWait.js";
+import { DescriptApiError } from "../client/errors.js";
 
 export interface ExportBatchItem {
   projectId?: string;
@@ -44,6 +45,8 @@ export interface ExportBatchOptions {
    * passes to exportPublished. Not intended to be set by external callers.
    */
   claimFolder?: ExportPublishedOptions["claimFolder"];
+  /** Injectable sleep for the already-running publish wait. Defaults to setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ExportBatchReportItem extends ExportPublishedResult {
@@ -66,6 +69,20 @@ function slugFromShareUrl(shareUrl: string): string {
   } catch {
     return "";
   }
+}
+
+const ALREADY_RUNNING_WAIT_MS = 30_000;
+const ALREADY_RUNNING_MAX_ATTEMPTS = 10;
+const defaultSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Descript serializes publish jobs per project. A ghost job (e.g. left by a
+// 502 on a prior submission) can hold the lock for minutes, far beyond the
+// HTTP layer's Retry-After retries, so this waits at workflow scale. Only
+// the specific per-project message qualifies - generic rate limits still
+// fail fast after the HTTP layer's own retries.
+function isAlreadyRunning(e: unknown): boolean {
+  return e instanceof DescriptApiError && e.status === 429 &&
+    /publish job is already running/i.test(e.body?.message ?? "");
 }
 
 async function processOne(
@@ -122,13 +139,26 @@ async function processOne(
       };
     }
     try {
-      const out = await publishAndWait(client, {
+      const publishReq = {
         project_id: item.projectId,
         composition_id: item.compositionId,
         media_type: opts.publish.mediaType,
         resolution: opts.publish.resolution,
         access_level: opts.publish.accessLevel
-      });
+      };
+      let out;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          out = await publishAndWait(client, { ...publishReq });
+          break;
+        } catch (e) {
+          if (isAlreadyRunning(e) && attempt < ALREADY_RUNNING_MAX_ATTEMPTS) {
+            await (opts.sleep ?? defaultSleep)(ALREADY_RUNNING_WAIT_MS);
+            continue;
+          }
+          throw e;
+        }
+      }
       if (!out.ok || !out.shareUrl) {
         return {
           ok: false, slug: "", title: "", outputDir: "",
@@ -239,7 +269,21 @@ export async function exportBatch(
   // mutating the caller's opts object.
   const batchOpts: ExportBatchOptions = { ...opts, claimFolder };
 
-  const items = await runPool(batchOpts.items, batchOpts.concurrency, (item) => processOne(client, item, batchOpts));
+  // Descript serializes publish jobs per project (verified 2026-08-27), so
+  // group export-mode items by projectId and run each group as a serial
+  // chain; the pool parallelizes across groups. Download-mode (slug) items
+  // have no publish step and stay individually poolable.
+  const groups = new Map<string, number[]>();
+  batchOpts.items.forEach((item, i) => {
+    const key = item.slug ? `slug:${i}` : `project:${item.projectId ?? `missing:${i}`}`;
+    const g = groups.get(key); if (g) g.push(i); else groups.set(key, [i]);
+  });
+  const results: ExportBatchReportItem[] = new Array(batchOpts.items.length);
+  await runPool([...groups.values()], batchOpts.concurrency, async (indices) => {
+    for (const i of indices) results[i] = await processOne(client, batchOpts.items[i]!, batchOpts);
+    return undefined;
+  });
+  const items = results;
   const ok = items.every((i) => i.ok);
   const report: ExportBatchReport = { ok, command: opts.command, items };
 

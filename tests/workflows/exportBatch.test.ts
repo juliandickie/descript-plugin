@@ -1,4 +1,4 @@
-import { test, afterEach } from "node:test";
+import { test, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -275,5 +275,86 @@ test("exportBatch disambiguates colliding titles into distinct folders", async (
   // name - this is what keeps the file and its folder consistent.
   assert.ok(readFileSync(join(dirs[0]!, `${basename(dirs[0]!)}.srt`), "utf8").includes("Bonjour"));
   assert.ok(readFileSync(join(dirs[1]!, `${basename(dirs[1]!)}.srt`), "utf8").includes("Bienvenue"));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// v0.6.0 - per-project publish serialization (field report 2026-08-27).
+// Descript rejects a publish submission with 429 "A publish job is already
+// running for this project" while any publish for the SAME project is in
+// flight - one publish per project at a time. Same-project items must chain
+// serially even when the batch concurrency allows more parallelism; the pool
+// still parallelizes across different projects.
+test("same-project publish submissions never overlap even at high concurrency", async () => {
+  // Deferred publish mocks: track how many publishes are in flight per project.
+  let inFlight = 0, maxInFlight = 0;
+  const resolvers: Array<() => void> = [];
+  mock.method(globalThis, "fetch", async (input: any, init: any = {}) => {
+    const url = String(input);
+    if (url.includes("/jobs/publish")) {
+      inFlight += 1; maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise<void>((r) => resolvers.push(r));
+      inFlight -= 1;
+      const n = resolvers.length;
+      return new Response(JSON.stringify({ job_id: `j${n}`, drive_id: "d", project_id: "p1", project_url: "u" }), { status: 201 });
+    }
+    if (url.includes("/jobs/j")) {
+      const id = url.split("/").pop();
+      return new Response(JSON.stringify({ job_id: id, job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c", share_url: `https://share.descript.com/view/slug${id}` } }), { status: 200 });
+    }
+    if (url.includes("published_projects/")) {
+      const slug = url.split("/").pop();
+      return new Response(JSON.stringify({ project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: `T ${slug}` }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx" }), { status: 200 });
+    }
+    throw new Error(`unexpected url ${url}`);
+  });
+  const dir = mkdtempSync(join(tmpdir(), "serial-"));
+  const p = exportBatch(new DescriptClient({ token: "t" }), {
+    items: [
+      { projectId: "p1", compositionId: "c1" },
+      { projectId: "p1", compositionId: "c2" },
+      { projectId: "p1", compositionId: "c3" }
+    ],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 5,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" }
+  });
+  // Release in-flight submissions one at a time as they appear.
+  while (resolvers.length < 1) await new Promise((r) => setTimeout(r, 5));
+  for (let released = 0; released < 3; released++) {
+    resolvers[released]!();
+    if (released < 2) while (resolvers.length < released + 2) await new Promise((r) => setTimeout(r, 5));
+  }
+  const report = await p;
+  assert.equal(maxInFlight, 1, "same-project publishes must be serial");
+  assert.equal(report.items.filter((i) => i.ok).length, 3);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("already-running 429 waits and retries instead of failing the item", async () => {
+  const sleeps: number[] = [];
+  const seq = [
+    { status: 429, json: { error: "rate_limited", message: "A publish job is already running for this project. Please wait for it to complete." } },
+    { status: 429, json: { error: "rate_limited", message: "A publish job is already running for this project. Please wait for it to complete." } },
+    { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p1", project_url: "u" } }
+  ];
+  // The HttpClient itself retries 429s honoring Retry-After; construct the
+  // client with maxRetries: 0 so each 429 surfaces to the workflow layer
+  // immediately instead of being absorbed at the HTTP layer, and each
+  // submission attempt consumes exactly one entry from the sequence above.
+  installMockFetchByUrl([
+    { match: "/jobs/publish", responses: seq },
+    { match: "/jobs/j1", responses: [{ status: 200, json: { job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c1", share_url: "https://share.descript.com/view/slugZ" } } }]},
+    { match: "published_projects/slugZ", responses: [{ status: 200, json: { project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "T" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx" } }]}
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), "wait-"));
+  const report = await exportBatch(new DescriptClient({ token: "t", maxRetries: 0 }), {
+    items: [{ projectId: "p1", compositionId: "c1" }],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 1,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" },
+    sleep: async (ms) => { sleeps.push(ms); }
+  });
+  assert.equal(report.items[0]!.ok, true);
+  assert.deepEqual(sleeps, [30000, 30000]);
   rmSync(dir, { recursive: true, force: true });
 });
