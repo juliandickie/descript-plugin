@@ -26,6 +26,8 @@ descript status, config, import, agent, models, transcript, translate, publish, 
 
 Global flags: --json, --no-wait, --token, --profile.
 
+`descript export --names <file>` (v0.7.0) renders exported files under the iDD language filename standard from a naming manifest (lesson fields plus the composition-to-language map captured at translation time), validated batch-wide before any publish. See the descript-export skill for the manifest shape.
+
 ## Skills
 
 descript-setup, descript-import, descript-edit, descript-transcript, descript-translate, descript-publish, descript-jobs, descript-export, descript-download-published, descript-batch, descript-api-reference. Edit, translate, publish, export, and batch are cost- or confirmation-gated; transcript is free and ungated.
