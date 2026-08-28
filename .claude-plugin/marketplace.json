@@ -12,7 +12,7 @@
     {
       "name": "descript",
       "source": { "source": "url", "url": "https://github.com/juliandickie/descript-plugin.git" },
-      "description": "Full programmatic access to the Descript API - import, Underlord agent edits, transcript export, model catalog, publish, jobs, and bulk pipelines, via a Node CLI wrapped by skills and an optional MCP shim.",
+      "description": "Full programmatic access to the Descript API - import, Underlord agent edits, caption translation with language mapping, transcript export, model catalog, publish, jobs, and bulk pipelines, via a Node CLI wrapped by skills and an optional MCP shim.",
       "author": {
         "name": "Julian Dickie",
         "email": "julian@instituteofdigitaldentistry.com",
