@@ -2,7 +2,7 @@ import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { DescriptClient } from "../../src/client/index.js";
 import { installMockFetch, installMockFetchByUrl, restoreFetch } from "../helpers/mockFetch.js";
 import { exportBatch } from "../../src/workflows/exportBatch.js";
@@ -237,5 +237,43 @@ test("publish-mode item: publish then download in one go", async () => {
   assert.equal(report.items[0]!.title, "X");
   assert.deepEqual(report.items[0]!.written, ["mp4", "srt", "md"]);
   assert.ok(existsSync(join(dir, "X", "X.mp4")));
+  rmSync(dir, { recursive: true, force: true });
+});
+
+// v0.6.0 - folder collision fix (field report 2026-08-27-translated-srt-findings.md).
+// Regional translation variants of the same composition publish under
+// identical titles; without a batch-scoped claim, the second item's folder
+// derivation collides with the first and silently overwrites its files.
+test("exportBatch disambiguates colliding titles into distinct folders", async () => {
+  installMockFetchByUrl([
+    { match: "/jobs/publish", responses: [
+      { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p1", project_url: "u" } },
+      { status: 201, json: { job_id: "j2", drive_id: "d", project_id: "p1", project_url: "u" } }
+    ]},
+    { match: "/jobs/j1", responses: [{ status: 200, json: { job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c1", share_url: "https://share.descript.com/view/slugAAA" } } }]},
+    { match: "/jobs/j2", responses: [{ status: 200, json: { job_id: "j2", job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c2", share_url: "https://share.descript.com/view/slugBBB" } } }]},
+    { match: "published_projects/slugAAA", responses: [{ status: 200, json: { project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "759K vues - identical title" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nBonjour" } }]},
+    { match: "published_projects/slugBBB", responses: [{ status: 200, json: { project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "759K vues - identical title" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nBienvenue" } }]}
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), "collide-"));
+  const client = new DescriptClient({ token: "t" });
+  const report = await exportBatch(client, {
+    items: [
+      { projectId: "p1", compositionId: "c1" },
+      { projectId: "p1", compositionId: "c2" }
+    ],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 1,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" }
+  });
+  assert.equal(report.ok, true);
+  const dirs = report.items.map((i) => i.outputDir);
+  assert.notEqual(dirs[0], dirs[1], "colliding titles must land in distinct folders");
+  assert.ok(dirs[1]!.includes("slugBBB"), "second claimant folder carries its slug");
+  // Filenames mirror the folder-name derivation (see exportPublished.ts), so
+  // the claimed (possibly suffixed) folder basename is also the file's base
+  // name - this is what keeps the file and its folder consistent.
+  assert.ok(readFileSync(join(dirs[0]!, `${basename(dirs[0]!)}.srt`), "utf8").includes("Bonjour"));
+  assert.ok(readFileSync(join(dirs[1]!, `${basename(dirs[1]!)}.srt`), "utf8").includes("Bienvenue"));
   rmSync(dir, { recursive: true, force: true });
 });

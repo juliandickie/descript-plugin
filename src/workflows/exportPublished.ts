@@ -20,6 +20,14 @@ export interface ExportPublishedOptions {
    * `docs/specs/2026-05-21-export-resume-design.md` for the semantics table.
    */
   skipFormats?: ExportFormat[];
+  /**
+   * Optional folder-name arbiter for batch runs. Called with the sanitized
+   * title-derived folder name and this item's slug; returns the folder name
+   * to use. exportBatch supplies one that suffixes " [<slug>]" when another
+   * slug already claimed the name, so identical titles (regional translation
+   * variants) cannot silently overwrite each other. Absent = today's behavior.
+   */
+  claimFolder?: (folder: string, slug: string) => string;
 }
 
 export interface ExportPublishedResult {
@@ -60,10 +68,16 @@ export async function exportPublished(
 ): Promise<ExportPublishedResult> {
   const meta = await client.getPublishedProjectMetadata(opts.slug);
   const title = meta.metadata?.title ?? "untitled";
-  const safeTitle = sanitize(title);
+  const rawFolderName = sanitize(title);
+  // Batch runs may see two slugs publish under the identical sanitized title
+  // (regional translation variants guarantee this - field report
+  // 2026-08-27-translated-srt-findings.md). claimFolder lets the caller
+  // disambiguate before the folder is created; single calls without it keep
+  // today's behavior unchanged.
+  const folderName = opts.claimFolder ? opts.claimFolder(rawFolderName, opts.slug) : rawFolderName;
   const targetDir = opts.projectFolder
-    ? join(opts.outputDir, opts.projectFolder, safeTitle)
-    : join(opts.outputDir, safeTitle);
+    ? join(opts.outputDir, opts.projectFolder, folderName)
+    : join(opts.outputDir, folderName);
   const skipSet = new Set<ExportFormat>(opts.skipFormats ?? []);
   // Per-format granularity: only build skipped[] for formats actually present in
   // the requested formats list. A skipFormats entry that isn't in opts.formats is
@@ -96,7 +110,7 @@ export async function exportPublished(
       if (fmt === "mp4") {
         if (!meta.download_url) throw new Error("metadata response has no download_url");
         const ext = extensionFromUrl(meta.download_url, meta.publish_type);
-        const out = join(targetDir, `${safeTitle}${ext}`);
+        const out = join(targetDir, `${folderName}${ext}`);
         const res = await fetch(meta.download_url);
         if (!res.ok) throw new Error(`download returned ${res.status}`);
         const buf = new Uint8Array(await res.arrayBuffer());
@@ -105,12 +119,12 @@ export async function exportPublished(
       } else if (fmt === "srt") {
         const cues = parseVtt(meta.subtitles ?? "");
         const srt = toSrt(cues);
-        await writeAtomic(join(targetDir, `${safeTitle}.srt`), srt);
+        await writeAtomic(join(targetDir, `${folderName}.srt`), srt);
         written.push("srt");
       } else if (fmt === "md") {
         const cues = parseVtt(meta.subtitles ?? "");
         const md = toMd(cues, title, { endMarker: opts.endMarker });
-        await writeAtomic(join(targetDir, `${safeTitle}.md`), md);
+        await writeAtomic(join(targetDir, `${folderName}.md`), md);
         written.push("md");
       }
     } catch (e) {

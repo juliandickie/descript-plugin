@@ -1,7 +1,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { DescriptClient } from "../client/index.js";
-import { exportPublished, type ExportFormat, type ExportPublishedResult } from "./exportPublished.js";
+import { exportPublished, type ExportFormat, type ExportPublishedResult, type ExportPublishedOptions } from "./exportPublished.js";
 import { publishAndWait } from "./publishAndWait.js";
 
 export interface ExportBatchItem {
@@ -36,6 +36,14 @@ export interface ExportBatchOptions {
    * Defaults to true.
    */
   writeReport?: boolean;
+  /**
+   * Folder-name arbiter threaded through to exportPublished for each item.
+   * exportBatch always supplies its own batch-scoped, map-backed
+   * implementation before running the pool (see exportBatch below); this
+   * field exists so processOne can forward it in the options object it
+   * passes to exportPublished. Not intended to be set by external callers.
+   */
+  claimFolder?: ExportPublishedOptions["claimFolder"];
 }
 
 export interface ExportBatchReportItem extends ExportPublishedResult {
@@ -165,7 +173,8 @@ async function processOne(
       formats: opts.formats,
       endMarker: opts.endMarker,
       projectFolder: item.projectFolder,
-      ...(item.skipFormats ? { skipFormats: item.skipFormats } : {})
+      ...(item.skipFormats ? { skipFormats: item.skipFormats } : {}),
+      ...(opts.claimFolder ? { claimFolder: opts.claimFolder } : {})
     });
     return {
       ...result,
@@ -212,7 +221,25 @@ export async function exportBatch(
 ): Promise<ExportBatchReport> {
   mkdirSync(opts.outputDir, { recursive: true });
 
-  const items = await runPool(opts.items, opts.concurrency, (item) => processOne(client, item, opts));
+  // Folder-name arbiter shared across the batch. First slug to claim a
+  // sanitized title keeps the clean name; later different slugs get a
+  // " [<slug>]" suffix. Identical titles are guaranteed by regional
+  // translation variants (see field report 2026-08-27), and without this
+  // the second item silently overwrites the first.
+  const claimed = new Map<string, string>();
+  const claimFolder = (folder: string, slug: string): string => {
+    const holder = claimed.get(folder);
+    if (holder === undefined) { claimed.set(folder, slug); return folder; }
+    if (holder === slug) return folder;
+    const suffixed = `${folder} [${slug}]`;
+    claimed.set(suffixed, slug);
+    return suffixed;
+  };
+  // Pass a copy carrying claimFolder to the pool workers rather than
+  // mutating the caller's opts object.
+  const batchOpts: ExportBatchOptions = { ...opts, claimFolder };
+
+  const items = await runPool(batchOpts.items, batchOpts.concurrency, (item) => processOne(client, item, batchOpts));
   const ok = items.every((i) => i.ok);
   const report: ExportBatchReport = { ok, command: opts.command, items };
 
