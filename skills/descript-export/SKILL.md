@@ -32,6 +32,7 @@ End-to-end pipeline: publish a composition (or many), download the rendered medi
      --access-level private \
      --concurrency 5 \
      [--composition-ids id1,id2] \
+     [--names <file>] \
      [--no-end-marker] \
      [--profile <name>] \
      --json
@@ -68,3 +69,31 @@ See `docs/specs/2026-05-21-export-resume-design.md` for the full semantics table
 - Translated captions export through THIS path: publish the translated composition, download its SRT. `descript export <pid> --composition-ids <ids> --formats srt --concurrency 1`.
 - Publishes serialize PER PROJECT (vendor constraint) - the CLI now chains same-project items automatically, but budget roughly 4-6 minutes of render per 12-minute composition; a whole-project language sweep is an hours-long batch.
 - Regional variants produce IDENTICAL composition titles; colliding titles are auto-disambiguated with a " [slug]" folder suffix - read outputDir per item from the report rather than assuming title-named folders.
+
+## Standard-compliant filenames (v0.7.0+, --names)
+
+For iDD course production deliverables, `--names <file>` renders each file under the iDD language filename standard (locked 2026-08-28) instead of title-derived folders:
+
+`[Course Acronym] - [CC] - [LL] - [CODE Simplified Language Name] - [Lesson Name].ext`
+
+The names file carries the lesson's static fields plus the composition-to-language map captured at translation time (from the translate report or the project's LANGUAGE-INDEX - never guessed from titles):
+
+```json
+{
+  "acronym": "UISC-AAS200E", "cc": "01", "ll": "01",
+  "lesson": "Unboxing and Initial Setup",
+  "languages": { "<composition-id>": "fr-CA", "<composition-id>": "en" }
+}
+```
+
+Rules the CLI enforces -
+
+- Language codes are canonical (fr-CA, es-419, en). Latin American Spanish keys as es-419 but WRITES plain "ES Spanish Latino" per the standard. Bare "es" is rejected as ambiguous.
+
+- Files land FLAT in the output dir under the rendered name (no per-title folders); the report carries `renderedName` per item and `--resume` reuses it.
+
+- Pre-flight runs before ANY publish: missing or unknown languages, missing fields, and duplicate rendered names exit 2 listing every offender, costing nothing.
+
+- Names over Vimeo's 128-char cap WARN and set `nameOver128` in the report; the CLI never auto-trims - trim the lesson name in the manifest (never the language segment or numbers).
+
+- `--name-template "<template>"` overrides the standard template for non-iDD uses (placeholders: {lang}, {title}, {id}, plus any manifest field; {slug} is unavailable in export mode).
