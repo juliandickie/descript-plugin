@@ -4,7 +4,7 @@ import { handleRpc, handleLine, TOOLS } from "../../src/mcp/server.js";
 
 test("lists a tool per CLI surface", () => {
   const names = TOOLS.map((t) => t.name);
-  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript"]) {
+  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate"]) {
     assert.ok(names.includes(n), `missing tool ${n}`);
   }
 });
@@ -82,4 +82,16 @@ test("descript_transcript argv builder maps args to CLI flags", () => {
 test("descript_models argv builder", () => {
   const tool = TOOLS.find((t) => t.name === "descript_models")!;
   assert.deepEqual(tool.argv({}), ["models", "--json"]);
+});
+
+test("descript_translate argv builder", () => {
+  const tool = TOOLS.find((t) => t.name === "descript_translate")!;
+  assert.deepEqual(
+    tool.argv({ project_id: "p1", composition_id: "c1", language: "French (Canada)", model: "claude-haiku" }),
+    ["translate", "p1", "c1", "--language", "French (Canada)", "--model", "claude-haiku", "--json"]
+  );
+  assert.deepEqual(
+    tool.argv({ project_id: "p1", language: "German" }),
+    ["translate", "p1", "--language", "German", "--json"]
+  );
 });

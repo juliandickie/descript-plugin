@@ -37,7 +37,15 @@ export const TOOLS: Tool[] = [
       ...(a.markers === true ? ["--markers"] : []),
       ...(a.out ? ["--out", String(a.out)] : []),
       "--json"
-    ] }
+    ] },
+  { name: "descript_translate", description: "Translate a composition's captions via Underlord and report which NEW composition carries the requested language (creation-time mapping). BILLABLE - spends AI credits (translate captions ~10 plus agent message credits); confirm with the user before calling. args: project_id, composition_id?, language (e.g. \"French (Canada)\" - regional variants supported), model?", argv: (a) => [
+      "translate",
+      String(a.project_id ?? ""),
+      ...(a.composition_id ? [String(a.composition_id)] : []),
+      "--language", String(a.language ?? ""),
+      ...(a.model ? ["--model", String(a.model)] : []),
+      "--json"
+    ] },
 ];
 
 export interface ExecResult { code: number; stdout: string; stderr: string; }
