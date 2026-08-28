@@ -3,6 +3,7 @@ import { DescriptApiError } from "../../client/errors.js";
 import { resolveCredentials } from "../../config/credentials.js";
 import { importAndWait, normalizeImportJob } from "../../workflows/importAndWait.js";
 import { editAndWait } from "../../workflows/editAndWait.js";
+import { translateAndMap } from "../../workflows/translate.js";
 import { pollJob } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload } from "../../workflows/upload.js";
@@ -191,6 +192,52 @@ export const COMMANDS = {
         }
         return 0;
     },
+    async translate(ctx) {
+        const projectId = ctx.args[0];
+        const language = typeof ctx.flags.language === "string" ? ctx.flags.language : undefined;
+        if (!projectId || !language) {
+            fail(ctx.io, "Usage: descript translate <project-id> [composition-id] --language \"<name>\" [--model <m>]  (billable - spends AI credits)");
+            return 2;
+        }
+        if (noWait(ctx)) {
+            fail(ctx.io, "--no-wait is not supported: the language-to-composition mapping requires waiting and diffing the project");
+            return 2;
+        }
+        const out = await translateAndMap(client(ctx), {
+            projectId,
+            ...(ctx.args[1] ? { compositionId: ctx.args[1] } : {}),
+            language,
+            ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {})
+        });
+        if (!out.ok) {
+            fail(ctx.io, out.error ?? "translate job failed", out);
+            return 3;
+        }
+        if (out.mappingCaptureFailed) {
+            // The agent job already billed AI credits (out.ok is true). Re-running
+            // translate here would bill a second time for work already done, so the
+            // guidance below is explicit about not doing that - recover the mapping
+            // manually from `projects get` and the agent's own response instead.
+            const captureLines = [
+                `Translation job succeeded and credits were spent (credits: ${out.aiCreditsUsed ?? 0}, job ${out.jobId}) BUT the mapping capture failed: ${out.mappingCaptureFailed}`,
+                `Do NOT re-run translate (it would bill again). List compositions with: descript projects get ${projectId} and identify the new one from the agent response:`,
+                out.agentResponse ?? "(none)"
+            ];
+            emit(ctx.io, captureLines.join("\n"), out);
+            return 5;
+        }
+        const lines = [`Translated to ${out.language}: ${out.newCompositions.length} new composition(s)`];
+        for (const c of out.newCompositions)
+            lines.push(`  ${c.id}  ${c.name}`);
+        lines.push(`(credits: ${out.aiCreditsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`);
+        if (out.newCompositions.length === 0) {
+            lines.push(`Agent response: ${out.agentResponse ?? "(none)"}`);
+            emit(ctx.io, lines.join("\n"), out);
+            return 4;
+        }
+        emit(ctx.io, lines.join("\n"), out);
+        return 0;
+    },
     async config(ctx) {
         const sub = ctx.args[0];
         const configPath = ctx.env.DESCRIPT_CONFIG_PATH;
@@ -336,7 +383,7 @@ export const COMMANDS = {
             return 0;
         }
         const out = await editAndWait(c, req);
-        emit(ctx.io, out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0})`
+        emit(ctx.io, out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
             : `Agent failed: ${out.error}`, out);
         return out.ok ? 0 : 4;
     },

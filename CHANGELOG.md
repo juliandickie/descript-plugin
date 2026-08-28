@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0 - 2026-08-28
+
+Translation workflows plus export hardening, from the 2026-08-27/28 live findings (`docs/field-reports/2026-08-27-translated-srt-findings.md`).
+
+- **`descript translate`** - translate a composition's captions via Underlord and capture WHICH new composition carries the language, at creation time (the only reliable moment - no language metadata exists afterward and variant titles are identical). Regional variants supported and live-verified (French (France) vs French (Canada)). Billable; exit 4 signals "agent asked a question, nothing created"; exit 5 signals the job billed but the mapping capture failed - do not re-run, the output carries the job id and recovery guidance. MCP tool `descript_translate` (12 tools total).
+- **Export collision fix** - identical composition titles (guaranteed by regional variants) no longer overwrite each other; colliding folders get a " [slug]" suffix and the report's outputDir is authoritative.
+- **Per-project publish serialization** - Descript allows one publish job per project at a time; export now chains same-project items automatically (parallelism still applies across projects) and waits out "already running" locks (30s x 10) instead of failing items, covering ghost jobs left by 5xx submissions.
+- **Agent transparency** - agent and translate runs report `resolved_model`; `conversation_id` surfaced in JSON output. Reminder encoded in skills: agent prompts must be self-contained (conversations cannot be continued via the API).
+
 ## 0.5.0 - 2026-08-27
 
 API surface refresh to the 2026-08-27 audit (`docs/field-reports/2026-08-27-api-drift-audit.md`).

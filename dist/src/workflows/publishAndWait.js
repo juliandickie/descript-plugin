@@ -1,6 +1,19 @@
 import { pollJob } from "./poll.js";
-export async function publishAndWait(client, req, poll = {}) {
-    const submit = await client.publishJob(req);
+export async function publishAndWait(client, req, poll = {}, submitRetry) {
+    let submit;
+    for (let attempt = 0;; attempt++) {
+        try {
+            submit = await client.publishJob(req);
+            break;
+        }
+        catch (e) {
+            if (submitRetry && submitRetry.isRetryable(e) && attempt < submitRetry.maxAttempts) {
+                await submitRetry.sleep(submitRetry.waitMs);
+                continue;
+            }
+            throw e;
+        }
+    }
     const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
     if (final.job_type !== "publish") {
         throw new Error(`Unexpected job_type "${final.job_type}" for publish job ${submit.job_id}`);
