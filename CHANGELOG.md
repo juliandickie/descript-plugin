@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 - 2026-08-28
+
+Standard-compliant export filenames, implementing the iDD language filename standard locked 2026-08-28 (`[Course Acronym] - [CC] - [LL] - [CODE Simplified Language Name] - [Lesson Name].ext`).
+
+- **`descript export --names <file>`** - renders each exported file under the standard from a naming manifest (lesson fields plus the composition-to-language map captured at translation time). Files land FLAT under the rendered name instead of title-derived folders; the report records `renderedName` per item and `--resume` reuses it. Pre-flight validates the ENTIRE batch before any publish is submitted - missing or unknown language codes, missing template fields, and duplicate rendered names exit 2 listing every offender at zero cost.
+- **Built-in language vocabulary** - canonical code to filename segment for English plus the 64 iDD translation languages, generated from the standard's computed data. Latin American Spanish keys as `es-419` and writes plain `ES Spanish Latino`; bare `es` is rejected as ambiguous with a disambiguation hint.
+- **`--name-template "<template>"`** - overrides the standard template for non-iDD uses. Placeholders `{lang}`, `{title}`, `{id}`, plus any manifest field; `{slug}` is rejected in export mode (unknown pre-publish).
+- **128-char guardrail** - rendered names over Vimeo's cap warn on stderr and set `nameOver128` in the report; the CLI never auto-trims (trimming the lesson name is an operator decision per the standard).
+
 ## 0.6.0 - 2026-08-28
 
 Translation workflows plus export hardening, from the 2026-08-27/28 live findings (`docs/field-reports/2026-08-27-translated-srt-findings.md`).

@@ -320,3 +320,69 @@ test("result.skipped is empty array when skipFormats option is omitted (backward
     assert.deepEqual(result.skipped, []);
     rmSync(dir, { recursive: true, force: true });
 });
+test("fileBaseName writes flat files under the rendered name (no per-title folder)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-named-"));
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs.example/Whatever.mp4?sig=abc",
+                download_url_expires_at: "2026-08-28T00:00:00Z",
+                project_id: "p1",
+                publish_type: "video",
+                privacy: "private",
+                metadata: { title: "759K vues sur cette video" },
+                subtitles: SAMPLE_VTT
+            }
+        },
+        { status: 200, text: "mp4-bytes-here" }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const base = "UISC-AAS200E - 01 - 01 - FR-CA French Canada - Unboxing and Initial Setup";
+    const result = await exportPublished(client, {
+        slug: "abc-999",
+        outputDir: dir,
+        formats: ["mp4", "srt"],
+        endMarker: true,
+        fileBaseName: base
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.renderedName, base);
+    assert.equal(result.nameOver128, undefined);
+    assert.equal(result.outputDir, dir);
+    assert.ok(existsSync(join(dir, `${base}.mp4`)));
+    assert.ok(existsSync(join(dir, `${base}.srt`)));
+    // No title-derived folder is created in named mode.
+    assert.ok(!existsSync(join(dir, "759K vues sur cette video")));
+    rmSync(dir, { recursive: true, force: true });
+});
+test("fileBaseName over 128 chars sets nameOver128 but still writes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-named-"));
+    installMockFetch([
+        {
+            status: 200,
+            json: {
+                download_url: "https://gcs.example/W.mp4?sig=abc",
+                download_url_expires_at: "2026-08-28T00:00:00Z",
+                project_id: "p1",
+                publish_type: "video",
+                privacy: "private",
+                metadata: { title: "T" },
+                subtitles: SAMPLE_VTT
+            }
+        }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const base = "X".repeat(140);
+    const result = await exportPublished(client, {
+        slug: "abc-1000",
+        outputDir: dir,
+        formats: ["srt"],
+        endMarker: true,
+        fileBaseName: base
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.nameOver128, true);
+    assert.ok(existsSync(join(dir, `${base}.srt`)));
+    rmSync(dir, { recursive: true, force: true });
+});

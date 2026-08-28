@@ -140,6 +140,7 @@ async function processOne(client, item, opts) {
             endMarker: opts.endMarker,
             projectFolder: item.projectFolder,
             ...(item.skipFormats ? { skipFormats: item.skipFormats } : {}),
+            ...(item.fileBaseName ? { fileBaseName: item.fileBaseName } : {}),
             ...(opts.claimFolder ? { claimFolder: opts.claimFolder } : {})
         });
         return {

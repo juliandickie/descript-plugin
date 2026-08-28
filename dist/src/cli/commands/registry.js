@@ -9,6 +9,7 @@ import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { exportBatch } from "../../workflows/exportBatch.js";
+import { parseNamingManifest, renderBatchNames, VIMEO_NAME_CAP } from "../../workflows/nameTemplate.js";
 import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -618,6 +619,9 @@ export const COMMANDS = {
         const compositionIdsFlag = typeof ctx.flags["composition-ids"] === "string" ? ctx.flags["composition-ids"] : undefined;
         const resumeFlag = typeof ctx.flags.resume === "string" ? ctx.flags.resume : undefined;
         const userPassedFormats = typeof ctx.flags.formats === "string";
+        const namesFlag = typeof ctx.flags.names === "string" ? ctx.flags.names : undefined;
+        const nameTemplateFlag = typeof ctx.flags["name-template"] === "string" ? ctx.flags["name-template"] : undefined;
+        const namingActive = namesFlag !== undefined || nameTemplateFlag !== undefined;
         // Scope mutex - exactly one of {positional PID, --projects, --resume}
         const scopeCount = (positionalPid ? 1 : 0) + (projectsFlag ? 1 : 0) + (resumeFlag ? 1 : 0);
         if (scopeCount === 0) {
@@ -632,6 +636,10 @@ export const COMMANDS = {
         if (resumeFlag) {
             if (compositionIdsFlag) {
                 fail(ctx.io, "--resume cannot be combined with --composition-ids");
+                return 2;
+            }
+            if (namingActive) {
+                fail(ctx.io, "--names/--name-template cannot be combined with --resume (resumed items reuse the renderedName recorded in the prior report)");
                 return 2;
             }
             const raw = readJsonFile(ctx, resumeFlag);
@@ -684,9 +692,35 @@ export const COMMANDS = {
             fail(ctx.io, "--composition-ids is only valid with the <project-id> form, not --projects");
             return 2;
         }
+        // Naming manifest (--names / --name-template) per the iDD course
+        // production naming standard, locked 2026-08-28. Parsed before any API
+        // call so a malformed manifest costs nothing.
+        let naming;
+        if (namingActive) {
+            let rawManifest = {};
+            if (namesFlag) {
+                rawManifest = readJsonFile(ctx, namesFlag);
+                if (rawManifest === undefined)
+                    return 2;
+            }
+            try {
+                naming = parseNamingManifest(rawManifest, nameTemplateFlag);
+            }
+            catch (e) {
+                fail(ctx.io, e instanceof Error ? e.message : String(e));
+                return 2;
+            }
+        }
         let items = [];
         if (positionalPid && positionalCid) {
-            items = [{ projectId: positionalPid, compositionId: positionalCid }];
+            // Direct pid+cid mode fetches the project only when naming needs the
+            // composition title; the flag-free path stays fetch-free.
+            let title;
+            if (naming) {
+                const project = await c.getProject(positionalPid);
+                title = project.compositions?.find((cc) => cc.id === positionalCid)?.name;
+            }
+            items = [{ projectId: positionalPid, compositionId: positionalCid, ...(title !== undefined ? { title } : {}) }];
         }
         else if (positionalPid) {
             // PID-only: list project compositions, optionally narrow via --composition-ids.
@@ -701,7 +735,7 @@ export const COMMANDS = {
                     return 2;
                 }
             }
-            items = chosen.map((cc) => ({ projectId: positionalPid, compositionId: cc.id }));
+            items = chosen.map((cc) => ({ projectId: positionalPid, compositionId: cc.id, title: cc.name }));
         }
         else if (projectsFlag) {
             // Multi-project: list each project's comps, label with project folder.
@@ -714,7 +748,7 @@ export const COMMANDS = {
                 const project = await c.getProject(pid);
                 const folder = sanitize(project.name ?? pid);
                 for (const cc of project.compositions ?? []) {
-                    items.push({ projectId: pid, compositionId: cc.id, projectFolder: folder });
+                    items.push({ projectId: pid, compositionId: cc.id, projectFolder: folder, title: cc.name });
                 }
             }
         }
@@ -722,8 +756,26 @@ export const COMMANDS = {
             fail(ctx.io, "no compositions to export");
             return 2;
         }
+        // Pre-flight name rendering runs BEFORE any publish is submitted -
+        // publishes are risk-bearing, so a bad manifest must cost nothing.
+        // Failures list every offender at once (fail loud, fix once).
+        let batchItems = items.map(({ title: _t, ...rest }) => rest);
+        if (naming) {
+            const rendered = renderBatchNames(naming, items.map((i) => ({ compositionId: i.compositionId, ...(i.title !== undefined ? { title: i.title } : {}) })));
+            if (!rendered.ok) {
+                fail(ctx.io, ["--names pre-flight failed, nothing was published:", ...rendered.errors.map((er) => `  - ${er}`)].join("\n"));
+                return 2;
+            }
+            const nameById = new Map(rendered.names.map((n) => [n.compositionId, n]));
+            batchItems = items.map(({ title: _t, ...rest }) => ({ ...rest, fileBaseName: nameById.get(rest.compositionId).name }));
+            for (const n of rendered.names) {
+                if (n.over128) {
+                    ctx.io.stderr(`warning: "${n.name}" is ${n.name.length} chars, over the ${VIMEO_NAME_CAP}-char Vimeo cap - trim the lesson name in the manifest, never the language segment or numbers\n`);
+                }
+            }
+        }
         const report = await exportBatch(c, {
-            items, outputDir, formats, endMarker, concurrency,
+            items: batchItems, outputDir, formats, endMarker, concurrency,
             command: "export",
             publish: { mediaType, resolution, accessLevel }
         });

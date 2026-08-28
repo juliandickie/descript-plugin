@@ -35,9 +35,17 @@ export async function exportPublished(client, opts) {
     // disambiguate before the folder is created; single calls without it keep
     // today's behavior unchanged.
     const folderName = opts.claimFolder ? opts.claimFolder(rawFolderName, opts.slug) : rawFolderName;
-    const targetDir = opts.projectFolder
-        ? join(opts.outputDir, opts.projectFolder, folderName)
-        : join(opts.outputDir, folderName);
+    // --names mode: files land flat under a pre-rendered unique base name; the
+    // per-title folder (and its collision arbitration) does not apply.
+    const baseName = opts.fileBaseName ?? folderName;
+    const targetDir = opts.fileBaseName
+        ? (opts.projectFolder ? join(opts.outputDir, opts.projectFolder) : opts.outputDir)
+        : (opts.projectFolder
+            ? join(opts.outputDir, opts.projectFolder, folderName)
+            : join(opts.outputDir, folderName));
+    const namedExtras = opts.fileBaseName !== undefined
+        ? { renderedName: opts.fileBaseName, ...(opts.fileBaseName.length > 128 ? { nameOver128: true } : {}) }
+        : {};
     const skipSet = new Set(opts.skipFormats ?? []);
     // Per-format granularity: only build skipped[] for formats actually present in
     // the requested formats list. A skipFormats entry that isn't in opts.formats is
@@ -58,7 +66,8 @@ export async function exportPublished(client, opts) {
                 format,
                 error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
             })),
-            skipped
+            skipped,
+            ...namedExtras
         };
     }
     const written = [];
@@ -69,7 +78,7 @@ export async function exportPublished(client, opts) {
                 if (!meta.download_url)
                     throw new Error("metadata response has no download_url");
                 const ext = extensionFromUrl(meta.download_url, meta.publish_type);
-                const out = join(targetDir, `${folderName}${ext}`);
+                const out = join(targetDir, `${baseName}${ext}`);
                 const res = await fetch(meta.download_url);
                 if (!res.ok)
                     throw new Error(`download returned ${res.status}`);
@@ -80,13 +89,13 @@ export async function exportPublished(client, opts) {
             else if (fmt === "srt") {
                 const cues = parseVtt(meta.subtitles ?? "");
                 const srt = toSrt(cues);
-                await writeAtomic(join(targetDir, `${folderName}.srt`), srt);
+                await writeAtomic(join(targetDir, `${baseName}.srt`), srt);
                 written.push("srt");
             }
             else if (fmt === "md") {
                 const cues = parseVtt(meta.subtitles ?? "");
                 const md = toMd(cues, title, { endMarker: opts.endMarker });
-                await writeAtomic(join(targetDir, `${folderName}.md`), md);
+                await writeAtomic(join(targetDir, `${baseName}.md`), md);
                 written.push("md");
             }
         }
@@ -101,6 +110,7 @@ export async function exportPublished(client, opts) {
         outputDir: targetDir,
         written,
         failed,
-        skipped
+        skipped,
+        ...namedExtras
     };
 }
