@@ -1,4 +1,5 @@
 import type { DescriptClient } from "../client/index.js";
+import type { ProjectDetail } from "../client/types.js";
 import { editAndWait } from "./editAndWait.js";
 import type { PollOptions } from "./poll.js";
 
@@ -11,6 +12,7 @@ export interface TranslateOutcome {
   projectChanged?: boolean;
   aiCreditsUsed?: number;
   resolvedModel?: string;
+  mappingCaptureFailed?: string;
   error?: string;
 }
 
@@ -43,7 +45,26 @@ export async function translateAndMap(client: DescriptClient, opts: {
   if (!edit.ok) {
     return { ...base, ok: false, newCompositions: [], error: edit.error };
   }
-  const after = await client.getProject(opts.projectId);
+  // The agent job already ran and billed AI credits by this point (edit.ok is
+  // true). If this after-snapshot fetch fails, that must never be reported as
+  // a job failure - the caller would be invited to re-run translate, billing
+  // a second time for work that already happened. Surface every field already
+  // in hand from the billed job instead, with mappingCaptureFailed set so the
+  // caller can recover the mapping manually (e.g. `projects get` + reading
+  // the agent's response) rather than re-running.
+  let after: ProjectDetail;
+  try {
+    after = await client.getProject(opts.projectId);
+  } catch (e) {
+    return {
+      ...base, ok: true, newCompositions: [],
+      mappingCaptureFailed: e instanceof Error ? e.message : String(e),
+      agentResponse: edit.agentResponse,
+      projectChanged: edit.projectChanged,
+      aiCreditsUsed: edit.aiCreditsUsed,
+      resolvedModel: edit.resolvedModel
+    };
+  }
   const newCompositions = (after.compositions ?? [])
     .filter((c) => !known.has(c.id))
     .map((c) => ({ id: c.id, name: c.name }));

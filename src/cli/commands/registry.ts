@@ -200,7 +200,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       fail(ctx.io, "Usage: descript translate <project-id> [composition-id] --language \"<name>\" [--model <m>]  (billable - spends AI credits)");
       return 2;
     }
-    if (ctx.flags["no-wait"] === true) {
+    if (noWait(ctx)) {
       fail(ctx.io, "--no-wait is not supported: the language-to-composition mapping requires waiting and diffing the project");
       return 2;
     }
@@ -211,6 +211,19 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {})
     });
     if (!out.ok) { fail(ctx.io, out.error ?? "translate job failed", out); return 3; }
+    if (out.mappingCaptureFailed) {
+      // The agent job already billed AI credits (out.ok is true). Re-running
+      // translate here would bill a second time for work already done, so the
+      // guidance below is explicit about not doing that - recover the mapping
+      // manually from `projects get` and the agent's own response instead.
+      const captureLines = [
+        `Translation job succeeded and credits were spent (credits: ${out.aiCreditsUsed ?? 0}, job ${out.jobId}) BUT the mapping capture failed: ${out.mappingCaptureFailed}`,
+        `Do NOT re-run translate (it would bill again). List compositions with: descript projects get ${projectId} and identify the new one from the agent response:`,
+        out.agentResponse ?? "(none)"
+      ];
+      emit(ctx.io, captureLines.join("\n"), out);
+      return 5;
+    }
     const lines = [`Translated to ${out.language}: ${out.newCompositions.length} new composition(s)`];
     for (const c of out.newCompositions) lines.push(`  ${c.id}  ${c.name}`);
     lines.push(`(credits: ${out.aiCreditsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`);

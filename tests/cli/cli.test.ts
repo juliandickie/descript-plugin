@@ -1307,3 +1307,44 @@ test("translate usage gates fire before any API call", async () => {
   assert.equal(await runCli(["translate", "p1"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
   assert.equal(await runCli(["translate", "p1", "--language", "German", "--no-wait"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2);
 });
+
+// Task 4 review escalation (2026-08-28): the after-payment getProject call in
+// translateAndMap is now guarded. A transient failure there must surface the
+// jobId, the credits already spent, and explicit do-not-rerun guidance -
+// never a generic error that invites a costly, billable re-run. Exit code 5
+// is new here; Task 6's skill text documents it (not the USAGE line - see
+// report).
+test("translate command exits 5 and warns not to re-run when mapping capture fails after a billed job", async () => {
+  installMockFetchByUrl([
+    { match: "/projects/p1", responses: [
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }] } },
+      { status: 500, json: { error: "server_error", message: "temporary failure" } }
+    ]},
+    { match: "/jobs/agent", responses: [{ status: 201, json: { job_id: "ja", drive_id: "d", project_id: "p1", project_url: "u" } }]},
+    { match: "/jobs/ja", responses: [{ status: 200, json: { job_id: "ja", job_type: "agent", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", agent_response: "Done", project_changed: true, ai_credits_used: 9.3, resolved_model: "claude-haiku-4.5" } } }]}
+  ]);
+  const c = capture();
+  const code = await runCli(["translate", "p1", "orig", "--language", "French (Canada)"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 5);
+  const out = c.out.join("");
+  assert.match(out, /credits were spent/);
+  assert.match(out, /Do NOT re-run/);
+  assert.match(out, /job ja/);
+  assert.match(out, /credits: 9\.3/);
+});
+
+test("translate command exits 3 when the agent job itself fails", async () => {
+  installMockFetchByUrl([
+    { match: "/projects/p1", responses: [
+      { status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {}, compositions: [{ id: "orig", name: "Video", media_type: "video" }] } }
+    ]},
+    { match: "/jobs/agent", responses: [{ status: 201, json: { job_id: "ja", drive_id: "d", project_id: "p1", project_url: "u" } }]},
+    { match: "/jobs/ja", responses: [{ status: 200, json: { job_id: "ja", job_type: "agent", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "error", error_message: "agent execution failed" } } }]}
+  ]);
+  const c = capture();
+  const code = await runCli(["translate", "p1", "--language", "German"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 3);
+  assert.match(c.out.join(""), /agent execution failed/);
+});

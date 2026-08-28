@@ -48,3 +48,28 @@ test("translateAndMap reports zero new compositions when the agent only asks", a
   assert.deepEqual(out.newCompositions, []);
   assert.match(out.agentResponse ?? "", /add captions first/);
 });
+
+// The agent job already billed AI credits by the time this second getProject
+// runs. A transient failure here must never look like the job failed - see
+// docs/field-reports/2026-08-27-translated-srt-findings.md and the Task 4
+// review escalation (2026-08-28): losing the mapping is not losing the job.
+test("translateAndMap preserves billed fields when the after-fetch fails post-payment", async () => {
+  installMockFetchByUrl([
+    { match: "/projects/p1", responses: [
+      { status: 200, json: proj([{ id: "orig", name: "Video" }]) },
+      { status: 500, json: { error: "server_error", message: "temporary failure" } }
+    ]},
+    { match: "/jobs/agent", responses: [{ status: 201, json: { job_id: "ja", drive_id: "d", project_id: "p1", project_url: "u" } }]},
+    { match: "/jobs/ja", responses: [{ status: 200, json: { job_id: "ja", job_type: "agent", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", agent_response: "Done", project_changed: true, ai_credits_used: 9.3, resolved_model: "claude-haiku-4.5" } } }]}
+  ]);
+  const out = await translateAndMap(new DescriptClient({ token: "t" }), {
+    projectId: "p1", compositionId: "orig", language: "French (Canada)"
+  });
+  assert.equal(out.ok, true);
+  assert.deepEqual(out.newCompositions, []);
+  assert.match(out.mappingCaptureFailed ?? "", /500/);
+  assert.match(out.mappingCaptureFailed ?? "", /temporary failure/);
+  assert.equal(out.aiCreditsUsed, 9.3);
+  assert.equal(out.resolvedModel, "claude-haiku-4.5");
+  assert.equal(out.agentResponse, "Done");
+});
