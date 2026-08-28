@@ -2,7 +2,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { DescriptClient } from "../client/index.js";
 import { exportPublished, type ExportFormat, type ExportPublishedResult, type ExportPublishedOptions } from "./exportPublished.js";
-import { publishAndWait } from "./publishAndWait.js";
+import { publishAndWait, type SubmitRetryOptions } from "./publishAndWait.js";
 import { DescriptApiError } from "../client/errors.js";
 
 export interface ExportBatchItem {
@@ -146,19 +146,19 @@ async function processOne(
         resolution: opts.publish.resolution,
         access_level: opts.publish.accessLevel
       };
-      let out;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          out = await publishAndWait(client, { ...publishReq });
-          break;
-        } catch (e) {
-          if (isAlreadyRunning(e) && attempt < ALREADY_RUNNING_MAX_ATTEMPTS) {
-            await (opts.sleep ?? defaultSleep)(ALREADY_RUNNING_WAIT_MS);
-            continue;
-          }
-          throw e;
-        }
-      }
+      // The retry itself lives inside publishAndWait, scoped to ONLY the
+      // submission call - a poll-time or job-status error must never
+      // resubmit, or a job that already submitted successfully gets
+      // orphaned while a duplicate publish runs alongside it. exportBatch
+      // only supplies the policy: which errors qualify, how long to wait,
+      // how many attempts.
+      const submitRetry: SubmitRetryOptions = {
+        isRetryable: isAlreadyRunning,
+        sleep: opts.sleep ?? defaultSleep,
+        waitMs: ALREADY_RUNNING_WAIT_MS,
+        maxAttempts: ALREADY_RUNNING_MAX_ATTEMPTS
+      };
+      const out = await publishAndWait(client, publishReq, {}, submitRetry);
       if (!out.ok || !out.shareUrl) {
         return {
           ok: false, slug: "", title: "", outputDir: "",

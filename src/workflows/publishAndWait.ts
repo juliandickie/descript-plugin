@@ -13,12 +13,41 @@ export interface PublishOutcome {
   error?: string;
 }
 
+/**
+ * Retry policy for the initial publish SUBMISSION only (the
+ * `client.publishJob` call). Must never extend to polling or the job_type
+ * check below - a submission that already succeeded must never be
+ * resubmitted, or the original job is orphaned while a duplicate publish
+ * runs alongside it (see docs/field-reports/2026-08-27 already-running
+ * findings). The caller supplies the policy (which errors qualify, how
+ * long to wait, how many attempts); this function owns only the mechanism.
+ */
+export interface SubmitRetryOptions {
+  isRetryable: (e: unknown) => boolean;
+  sleep: (ms: number) => Promise<void>;
+  waitMs: number;
+  maxAttempts: number;
+}
+
 export async function publishAndWait(
   client: DescriptClient,
   req: PublishRequest,
-  poll: PollOptions = {}
+  poll: PollOptions = {},
+  submitRetry?: SubmitRetryOptions
 ): Promise<PublishOutcome> {
-  const submit = await client.publishJob(req);
+  let submit;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      submit = await client.publishJob(req);
+      break;
+    } catch (e) {
+      if (submitRetry && submitRetry.isRetryable(e) && attempt < submitRetry.maxAttempts) {
+        await submitRetry.sleep(submitRetry.waitMs);
+        continue;
+      }
+      throw e;
+    }
+  }
   const final = await pollJob((id) => client.getJob(id), submit.job_id, poll);
   if (final.job_type !== "publish") {
     throw new Error(`Unexpected job_type "${final.job_type}" for publish job ${submit.job_id}`);

@@ -358,3 +358,54 @@ test("already-running 429 waits and retries instead of failing the item", async 
   assert.deepEqual(sleeps, [30000, 30000]);
   rmSync(dir, { recursive: true, force: true });
 });
+
+// Fix pass (code review finding): the first version of this retry wrapped
+// the ENTIRE publishAndWait call (submit + poll). An "already running"
+// error surfacing from the POLL rather than the submission would have
+// re-entered the loop and fired a second, duplicate publishJob call,
+// orphaning the first job. The retry now lives inside publishAndWait,
+// scoped to ONLY the initial client.publishJob call (see
+// src/workflows/publishAndWait.ts SubmitRetryOptions) - a poll-time or
+// job-status error must always fail the item outright, never resubmit.
+test("a post-submission already-running error never triggers a duplicate publish submission", async () => {
+  const sleeps: number[] = [];
+  const { calls } = installMockFetchByUrl([
+    { match: "/jobs/publish", responses: [{ status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p1", project_url: "u" } }] },
+    { match: "/jobs/j1", responses: [{ status: 429, json: { error: "rate_limited", message: "A publish job is already running for this project. Please wait for it to complete." } }] }
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), "nodupe-"));
+  const report = await exportBatch(new DescriptClient({ token: "t", maxRetries: 0 }), {
+    items: [{ projectId: "p1", compositionId: "c1" }],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 1,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" },
+    sleep: async (ms) => { sleeps.push(ms); }
+  });
+  const submissions = calls.filter((c) => c.url.includes("/jobs/publish")).length;
+  assert.equal(submissions, 1, "a poll-time error must never trigger a second submission");
+  assert.equal(report.items[0]!.ok, false);
+  assert.deepEqual(sleeps, [], "the submission retry must never fire for a post-submission error");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("already-running 429 exhausts after 10 retries (11 total attempts) and fails with the original error", async () => {
+  const sleeps: number[] = [];
+  const alreadyRunning = { status: 429, json: { error: "rate_limited", message: "A publish job is already running for this project. Please wait for it to complete." } };
+  const { calls } = installMockFetchByUrl([
+    { match: "/jobs/publish", responses: Array.from({ length: 11 }, () => alreadyRunning) }
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), "exhaust-"));
+  const report = await exportBatch(new DescriptClient({ token: "t", maxRetries: 0 }), {
+    items: [{ projectId: "p1", compositionId: "c1" }],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 1,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" },
+    sleep: async (ms) => { sleeps.push(ms); }
+  });
+  const submissions = calls.filter((c) => c.url.includes("/jobs/publish")).length;
+  assert.equal(submissions, 11, "initial attempt plus 10 retries");
+  assert.deepEqual(sleeps, Array(10).fill(30000));
+  assert.equal(report.items[0]!.ok, false);
+  assert.ok(report.items[0]!.failed[0]!.error.includes("publish job is already running"), "surfaces the original qualifying error");
+  rmSync(dir, { recursive: true, force: true });
+});
