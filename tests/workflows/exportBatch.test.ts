@@ -278,6 +278,47 @@ test("exportBatch disambiguates colliding titles into distinct folders", async (
   rmSync(dir, { recursive: true, force: true });
 });
 
+// Post-review hardening: pins the claim-under-parallelism behavior for the
+// future. Same mock shape as the disambiguation test above (two same-project
+// items, identical published titles) but at concurrency 5 instead of 1.
+// Today the project chain serializes same-project items regardless of the
+// concurrency setting, so installMockFetchByUrl's queued per-URL responses
+// still resolve in submission order and this passes for the same reason the
+// concurrency=1 version does. If chaining is ever loosened to let
+// same-project items run in parallel, this test must keep passing - the
+// folder claim would then need to be safe under real concurrent access, not
+// just concurrent scheduling.
+test("concurrency=5 same-project collision: outputDirs stay distinct and both files keep their own content", async () => {
+  installMockFetchByUrl([
+    { match: "/jobs/publish", responses: [
+      { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p1", project_url: "u" } },
+      { status: 201, json: { job_id: "j2", drive_id: "d", project_id: "p1", project_url: "u" } }
+    ]},
+    { match: "/jobs/j1", responses: [{ status: 200, json: { job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c1", share_url: "https://share.descript.com/view/slugCCC" } } }]},
+    { match: "/jobs/j2", responses: [{ status: 200, json: { job_id: "j2", job_type: "publish", job_state: "stopped", created_at: "a", drive_id: "d", project_id: "p1", project_url: "u", result: { status: "success", composition_id: "c2", share_url: "https://share.descript.com/view/slugDDD" } } }]},
+    { match: "published_projects/slugCCC", responses: [{ status: 200, json: { project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "759K vues - identical title" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nBonjour" } }]},
+    { match: "published_projects/slugDDD", responses: [{ status: 200, json: { project_id: "p1", publish_type: "video", privacy: "private", metadata: { title: "759K vues - identical title" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nBienvenue" } }]}
+  ]);
+  const dir = mkdtempSync(join(tmpdir(), "collide5-"));
+  const client = new DescriptClient({ token: "t" });
+  const report = await exportBatch(client, {
+    items: [
+      { projectId: "p1", compositionId: "c1" },
+      { projectId: "p1", compositionId: "c2" }
+    ],
+    outputDir: dir, formats: ["srt"], endMarker: false, concurrency: 5,
+    command: "export",
+    publish: { mediaType: "Video", resolution: "1080p", accessLevel: "private" }
+  });
+  assert.equal(report.ok, true);
+  const dirs = report.items.map((i) => i.outputDir);
+  assert.notEqual(dirs[0], dirs[1], "colliding titles must land in distinct folders even at concurrency 5");
+  assert.ok(dirs[1]!.includes("slugDDD"), "second claimant folder carries its slug");
+  assert.ok(readFileSync(join(dirs[0]!, `${basename(dirs[0]!)}.srt`), "utf8").includes("Bonjour"));
+  assert.ok(readFileSync(join(dirs[1]!, `${basename(dirs[1]!)}.srt`), "utf8").includes("Bienvenue"));
+  rmSync(dir, { recursive: true, force: true });
+});
+
 // v0.6.0 - per-project publish serialization (field report 2026-08-27).
 // Descript rejects a publish submission with 429 "A publish job is already
 // running for this project" while any publish for the SAME project is in

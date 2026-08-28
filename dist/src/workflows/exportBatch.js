@@ -214,6 +214,8 @@ export async function exportBatch(client, opts) {
             groups.set(key, [i]);
     });
     const results = new Array(batchOpts.items.length);
+    // Per-item isolation is guaranteed by processOne's internal error mapping;
+    // anything thrown past it would abort the whole batch without a report - keep processOne throw-free.
     await runPool([...groups.values()], batchOpts.concurrency, async (indices) => {
         for (const i of indices)
             results[i] = await processOne(client, batchOpts.items[i], batchOpts);
