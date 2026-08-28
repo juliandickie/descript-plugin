@@ -16,6 +16,12 @@ export interface ExportBatchItem {
    * `docs/specs/2026-05-21-export-resume-design.md` for the semantics table.
    */
   skipFormats?: ExportFormat[];
+  /**
+   * Pre-rendered unique base name from `descript export --names` (iDD naming
+   * standard). Threaded to exportPublished; files land flat as
+   * `<fileBaseName>.<ext>`. Uniqueness is the CLI pre-flight's job.
+   */
+  fileBaseName?: string;
 }
 
 export interface ExportBatchOptions {
@@ -204,6 +210,7 @@ async function processOne(
       endMarker: opts.endMarker,
       projectFolder: item.projectFolder,
       ...(item.skipFormats ? { skipFormats: item.skipFormats } : {}),
+      ...(item.fileBaseName ? { fileBaseName: item.fileBaseName } : {}),
       ...(opts.claimFolder ? { claimFolder: opts.claimFolder } : {})
     });
     return {

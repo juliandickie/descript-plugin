@@ -1348,3 +1348,104 @@ test("translate command exits 3 when the agent job itself fails", async () => {
   assert.equal(code, 3);
   assert.match(c.out.join(""), /agent execution failed/);
 });
+
+// ---------------------------------------------------------------- v0.7.0 --names
+
+function writeNamesFile(dir: string, languages: Record<string, string>): string {
+  const p = join(dir, "names.json");
+  writeFileSync(p, JSON.stringify({
+    acronym: "UISC-AAS200E", cc: "01", ll: "01", lesson: "Unboxing and Initial Setup",
+    languages
+  }));
+  return p;
+}
+
+test("export --names renders the iDD standard, writes flat, reports renderedName", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-names-cli-"));
+  const namesPath = writeNamesFile(dir, { c1: "fr-CA", c2: "en" });
+  installMockFetch([
+    // GET /projects/p (titles + comp list)
+    { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c1", name: "Lesson FR" }, { id: "c2", name: "Lesson EN" }] } },
+    // c1: publish submit + job + metadata (srt needs no binary fetch)
+    { status: 201, json: { job_id: "j1", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j1", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u", result: { status: "success", share_url: "https://web.descript.com/p/view/sA", download_url: "https://gcs/A.mp4?s=1", download_url_expires_at: "t" } } },
+    { status: 200, json: { download_url: "https://gcs/A.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "Lesson FR" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+    // c2
+    { status: 201, json: { job_id: "j2", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j2", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u", result: { status: "success", share_url: "https://web.descript.com/p/view/sB", download_url: "https://gcs/B.mp4?s=1", download_url_expires_at: "t" } } },
+    { status: 200, json: { download_url: "https://gcs/B.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "Lesson EN" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\ny.\n" } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "--names", namesPath, "--output-dir", dir, "--formats", "srt", "--concurrency", "1", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 0);
+  assert.ok(existsSync(join(dir, "UISC-AAS200E - 01 - 01 - FR-CA French Canada - Unboxing and Initial Setup.srt")));
+  assert.ok(existsSync(join(dir, "UISC-AAS200E - 01 - 01 - EN English - Unboxing and Initial Setup.srt")));
+  // No per-title folders in named mode.
+  assert.ok(!existsSync(join(dir, "Lesson FR")));
+  const report = JSON.parse(readFileSync(join(dir, "export-report.json"), "utf8"));
+  assert.equal(report.items[0].renderedName, "UISC-AAS200E - 01 - 01 - FR-CA French Canada - Unboxing and Initial Setup");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("export --names pre-flight failure exits 2 before any publish", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-names-cli-"));
+  const namesPath = writeNamesFile(dir, { c1: "fr-CA" }); // c2 unmapped
+  const { calls } = installMockFetch([
+    { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c1", name: "A" }, { id: "c2", name: "B" }] } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "--names", namesPath, "--output-dir", dir, "--formats", "srt", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  // Only the project listing fired - no publish was submitted.
+  assert.equal(calls.length, 1);
+  assert.match(out.join(""), /no language mapped for composition c2/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("export --names cannot combine with --resume", async () => {
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "--resume", "/nonexistent.json", "--names", "/also-nonexistent.json", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.match(out.join(""), /cannot be combined with --resume/);
+});
+
+test("export --name-template {slug} is rejected in export mode", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-names-cli-"));
+  const { calls } = installMockFetch([
+    { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c", name: "X" }] } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "c", "--name-template", "{slug}", "--output-dir", dir, "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.equal(calls.length, 1); // project fetch for the title only
+  assert.match(out.join(""), /slug.*not available/i);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("export --names duplicate language mapping exits 2 naming both compositions", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "descript-names-cli-"));
+  const namesPath = writeNamesFile(dir, { c1: "fr-CA", c2: "fr-CA" });
+  installMockFetch([
+    { status: 200, json: { id: "p", name: "Proj", compositions: [{ id: "c1", name: "A" }, { id: "c2", name: "B" }] } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(
+    ["export", "p", "--names", namesPath, "--output-dir", dir, "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) }
+  );
+  assert.equal(code, 2);
+  assert.match(out.join(""), /both render to/);
+  rmSync(dir, { recursive: true, force: true });
+});

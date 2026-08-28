@@ -264,3 +264,59 @@ test("buildResumeReport sets ok:false when any ran item failed", () => {
   const report = buildResumeReport("/p", ran, [], false);
   assert.equal(report.ok, false);
 });
+
+// Named exports (--names): renderedName drives exists-checks and re-runs.
+test("named items use renderedName for exists-checks (flat files, no title folder)", () => {
+  const dir = mkdir();
+  const base = "UISC-AAS200E - 01 - 01 - EN English - Intro";
+  touchFile(dir, `${base}.srt`);
+
+  const prior: ExportBatchReport = {
+    ok: true, command: "export",
+    items: [{
+      ok: true, slug: "s1", title: "Some Unrelated Title", outputDir: dir,
+      written: ["srt"], failed: [], skipped: [],
+      renderedName: base
+    }]
+  };
+  const r = reconstructResumeItems(prior, ["srt"]);
+  assert.equal(r.itemsToRun.length, 0);
+  assert.equal(r.alreadyHandled[0]!.reason, "already complete");
+});
+
+test("named items missing on disk re-run with fileBaseName threaded through", () => {
+  const dir = mkdir();
+  const base = "UISC-AAS200E - 01 - 01 - FR-CA French Canada - Intro";
+  // Nothing on disk - the srt must be re-downloaded under the SAME name.
+
+  const prior: ExportBatchReport = {
+    ok: true, command: "export",
+    items: [{
+      ok: true, slug: "s2", title: "759K vues", outputDir: dir,
+      written: ["srt"], failed: [], skipped: [],
+      renderedName: base
+    }]
+  };
+  const r = reconstructResumeItems(prior, ["srt"]);
+  assert.equal(r.itemsToRun.length, 1);
+  assert.equal(r.itemsToRun[0]!.slug, "s2");
+  assert.equal(r.itemsToRun[0]!.fileBaseName, base);
+});
+
+test("named ok:false items resume the failed format with fileBaseName intact", () => {
+  const dir = mkdir();
+  const base = "UISC-AAS200E - 01 - 01 - ES Spanish Latino - Intro";
+  const prior: ExportBatchReport = {
+    ok: false, command: "export",
+    items: [{
+      ok: false, slug: "", title: "", outputDir: "",
+      written: [], failed: [{ format: "srt", error: "publish failed" }], skipped: [],
+      renderedName: base,
+      projectId: "p1", compositionId: "c1"
+    }]
+  };
+  const r = reconstructResumeItems(prior, ["srt"]);
+  assert.equal(r.itemsToRun.length, 1);
+  assert.equal(r.itemsToRun[0]!.projectId, "p1");
+  assert.equal(r.itemsToRun[0]!.fileBaseName, base);
+});

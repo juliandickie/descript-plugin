@@ -28,6 +28,14 @@ export interface ExportPublishedOptions {
    * variants) cannot silently overwrite each other. Absent = today's behavior.
    */
   claimFolder?: (folder: string, slug: string) => string;
+  /**
+   * Pre-rendered file base name from `descript export --names` (the iDD
+   * naming standard). When set, files write FLAT into outputDir (plus
+   * projectFolder) as `<fileBaseName>.<ext>` - no per-title folder and no
+   * claimFolder arbitration, because the CLI pre-flight already guarantees
+   * batch-wide uniqueness. Already sanitized by the renderer.
+   */
+  fileBaseName?: string;
 }
 
 export interface ExportPublishedResult {
@@ -39,6 +47,10 @@ export interface ExportPublishedResult {
   failed: Array<{ format: ExportFormat; error: string }>;
   /** Formats deliberately not attempted (set when caller passes `skipFormats`). */
   skipped: ExportFormat[];
+  /** The base name files were written under when --names was active. Resume prefers this over the sanitized title. */
+  renderedName?: string;
+  /** True when renderedName exceeds Vimeo's 128-character cap (warn-only, never auto-trimmed). */
+  nameOver128?: boolean;
 }
 
 function extensionFromUrl(downloadUrl: string, publishType: "audio" | "video" | "audiogram"): string {
@@ -75,9 +87,17 @@ export async function exportPublished(
   // disambiguate before the folder is created; single calls without it keep
   // today's behavior unchanged.
   const folderName = opts.claimFolder ? opts.claimFolder(rawFolderName, opts.slug) : rawFolderName;
-  const targetDir = opts.projectFolder
-    ? join(opts.outputDir, opts.projectFolder, folderName)
-    : join(opts.outputDir, folderName);
+  // --names mode: files land flat under a pre-rendered unique base name; the
+  // per-title folder (and its collision arbitration) does not apply.
+  const baseName = opts.fileBaseName ?? folderName;
+  const targetDir = opts.fileBaseName
+    ? (opts.projectFolder ? join(opts.outputDir, opts.projectFolder) : opts.outputDir)
+    : (opts.projectFolder
+      ? join(opts.outputDir, opts.projectFolder, folderName)
+      : join(opts.outputDir, folderName));
+  const namedExtras = opts.fileBaseName !== undefined
+    ? { renderedName: opts.fileBaseName, ...(opts.fileBaseName.length > 128 ? { nameOver128: true as const } : {}) }
+    : {};
   const skipSet = new Set<ExportFormat>(opts.skipFormats ?? []);
   // Per-format granularity: only build skipped[] for formats actually present in
   // the requested formats list. A skipFormats entry that isn't in opts.formats is
@@ -98,7 +118,8 @@ export async function exportPublished(
         format,
         error: `mkdir failed: ${e instanceof Error ? e.message : String(e)}`
       })),
-      skipped
+      skipped,
+      ...namedExtras
     };
   }
 
@@ -110,7 +131,7 @@ export async function exportPublished(
       if (fmt === "mp4") {
         if (!meta.download_url) throw new Error("metadata response has no download_url");
         const ext = extensionFromUrl(meta.download_url, meta.publish_type);
-        const out = join(targetDir, `${folderName}${ext}`);
+        const out = join(targetDir, `${baseName}${ext}`);
         const res = await fetch(meta.download_url);
         if (!res.ok) throw new Error(`download returned ${res.status}`);
         const buf = new Uint8Array(await res.arrayBuffer());
@@ -119,12 +140,12 @@ export async function exportPublished(
       } else if (fmt === "srt") {
         const cues = parseVtt(meta.subtitles ?? "");
         const srt = toSrt(cues);
-        await writeAtomic(join(targetDir, `${folderName}.srt`), srt);
+        await writeAtomic(join(targetDir, `${baseName}.srt`), srt);
         written.push("srt");
       } else if (fmt === "md") {
         const cues = parseVtt(meta.subtitles ?? "");
         const md = toMd(cues, title, { endMarker: opts.endMarker });
-        await writeAtomic(join(targetDir, `${folderName}.md`), md);
+        await writeAtomic(join(targetDir, `${baseName}.md`), md);
         written.push("md");
       }
     } catch (e) {
@@ -139,6 +160,7 @@ export async function exportPublished(
     outputDir: targetDir,
     written,
     failed,
-    skipped
+    skipped,
+    ...namedExtras
   };
 }

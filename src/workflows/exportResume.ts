@@ -141,8 +141,10 @@ export function reconstructResumeItems(
       continue;
     }
 
-    // Decide per-format whether to redo.
-    const safeTitle = sanitize(item.title || "untitled");
+    // Decide per-format whether to redo. Named exports (--names) recorded
+    // their base name in renderedName and wrote flat files under it; prefer
+    // it over the title-derived folder name so resume checks the real paths.
+    const safeTitle = item.renderedName ?? sanitize(item.title || "untitled");
     const failedFmts = new Set<ExportFormat>(item.failed.map((f) => f.format));
 
     const formatsToRedo: ExportFormat[] = [];
@@ -182,7 +184,8 @@ export function reconstructResumeItems(
       // Row 2 or Row 4: re-download only the missing/failed formats using slug.
       const reconstructed: ExportBatchItem = {
         slug: item.slug,
-        ...(skipFormats.length > 0 ? { skipFormats } : {})
+        ...(skipFormats.length > 0 ? { skipFormats } : {}),
+        ...(item.renderedName ? { fileBaseName: item.renderedName } : {})
       };
       itemsToRun.push(reconstructed);
     } else if (item.projectId && item.compositionId) {
@@ -190,7 +193,8 @@ export function reconstructResumeItems(
       const reconstructed: ExportBatchItem = {
         projectId: item.projectId,
         compositionId: item.compositionId,
-        ...(skipFormats.length > 0 ? { skipFormats } : {})
+        ...(skipFormats.length > 0 ? { skipFormats } : {}),
+        ...(item.renderedName ? { fileBaseName: item.renderedName } : {})
       };
       itemsToRun.push(reconstructed);
     } else {
