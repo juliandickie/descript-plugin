@@ -292,7 +292,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     if (noWait(ctx)) { const s = await c.agentEditJob(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
     const out = await editAndWait(c, req);
     emit(ctx.io,
-      out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0})`
+      out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
              : `Agent failed: ${out.error}`,
       out);
     return out.ok ? 0 : 4;

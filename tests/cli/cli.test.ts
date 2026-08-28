@@ -171,6 +171,35 @@ test("agent rejects a valueless --prompt without spending credits", async () => 
   assert.equal(calls.length, 0);
 });
 
+test("agent success line includes the resolved model when present", async () => {
+  const { calls } = installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "success", agent_response: "Added captions", project_changed: true, ai_credits_used: 5, media_seconds_used: 12, resolved_model: "claude-haiku-4.5" } } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(["agent", "--project-id", "p", "--prompt", "add captions"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 0);
+  assert.equal(calls.length, 2);
+  assert.match(out.join(""), /model: claude-haiku-4\.5/);
+});
+
+test("agent success line omits the model segment when resolved_model is absent", async () => {
+  const { calls } = installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "success", agent_response: "Added captions", project_changed: true, ai_credits_used: 5, media_seconds_used: 12 } } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(["agent", "--project-id", "p", "--prompt", "add captions"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 0);
+  assert.equal(calls.length, 2);
+  assert.equal(out.join("").trim(), "Agent: Added captions (credits: 5, seconds: 12)");
+  assert.doesNotMatch(out.join(""), /model:/);
+});
+
 test("batch with a nonexistent manifest exits 2 (usage), not 1", async () => {
   const out: string[] = [];
   const code = await runCli(["batch", "plan", "/no/such/manifest-xyz.json"],

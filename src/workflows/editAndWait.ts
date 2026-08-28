@@ -11,6 +11,8 @@ export interface EditOutcome {
   projectChanged?: boolean;
   aiCreditsUsed?: number;
   mediaSecondsUsed?: number;
+  resolvedModel?: string;
+  conversationId?: string;
   error?: string;
 }
 
@@ -35,6 +37,8 @@ export async function editAndWait(
     agentResponse: result.agent_response,
     projectChanged: result.project_changed,
     aiCreditsUsed: result.ai_credits_used,
-    mediaSecondsUsed: result.media_seconds_used
+    mediaSecondsUsed: result.media_seconds_used,
+    resolvedModel: result.resolved_model,
+    conversationId: result.conversation_id
   };
 }

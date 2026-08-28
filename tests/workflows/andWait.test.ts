@@ -14,7 +14,7 @@ test("editAndWait submits, polls, and normalizes the agent outcome", async () =>
     { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
     { status: 200, json: { job_id: "j", job_type: "agent", job_state: "running", created_at: "t", drive_id: "d", project_id: "p", project_url: "u" } },
     { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
-        result: { status: "success", agent_response: "Added captions", project_changed: true, ai_credits_used: 32, media_seconds_used: 10 } } }
+        result: { status: "success", agent_response: "Added captions", project_changed: true, ai_credits_used: 32, media_seconds_used: 10, conversation_id: "conv_123", resolved_model: "claude-haiku-4.5" } } }
   ]);
   const client = new DescriptClient({ token: "t" });
   const out = await editAndWait(client, { project_id: "p", prompt: "add captions" }, { intervalMs: 1, sleep: noSleep });
@@ -22,6 +22,8 @@ test("editAndWait submits, polls, and normalizes the agent outcome", async () =>
   assert.equal(out.projectUrl, "u");
   assert.equal(out.agentResponse, "Added captions");
   assert.equal(out.aiCreditsUsed, 32);
+  assert.equal(out.resolvedModel, "claude-haiku-4.5");
+  assert.equal(out.conversationId, "conv_123");
 });
 
 test("editAndWait surfaces a failed job result as ok:false", async () => {
