@@ -8,6 +8,7 @@ description: Export a transcript from a Descript project composition as txt, mar
 ## When to Use
 - "Get me the transcript of X", "export SRT captions", "give me the markdown transcript"
 - Transcript or captions ONLY. If the user also wants the rendered media file (mp4), route to descript-export instead - that path publishes first. Never publish just to obtain a transcript.
+- ORIGINAL language only. The transcript layer stays in the source language even on translated compositions (verified 2026-08-27). For translated subtitles route to descript-export (existing translations, publish path) or descript-translate (create a new translation).
 
 ## Instructions
 - Single composition: `descript transcript <project-id> <composition-id> --format markdown --json`

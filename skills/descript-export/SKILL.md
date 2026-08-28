@@ -63,3 +63,8 @@ Resume rules -
 - Items where the prior report records a successful publish (non-empty slug) skip republish on resume - cost-reuse principle.
 
 See `docs/specs/2026-05-21-export-resume-design.md` for the full semantics table.
+
+## Translated compositions and bulk sweeps
+- Translated captions export through THIS path: publish the translated composition, download its SRT. `descript export <pid> --composition-ids <ids> --formats srt --concurrency 1`.
+- Publishes serialize PER PROJECT (vendor constraint) - the CLI now chains same-project items automatically, but budget roughly 4-6 minutes of render per 12-minute composition; a whole-project language sweep is an hours-long batch.
+- Regional variants produce IDENTICAL composition titles; colliding titles are auto-disambiguated with a " [slug]" folder suffix - read outputDir per item from the report rather than assuming title-named folders.

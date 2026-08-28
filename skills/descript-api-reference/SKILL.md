@@ -10,7 +10,7 @@ Background knowledge for building correct Descript requests. The plugin's CLI is
 
 ## CLI map
 
-descript status, config, import, agent, models, transcript, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
+descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
 
 ## Per-endpoint highest-impact delta
 
@@ -35,6 +35,8 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 - The full Underlord model list (Auto plus seven specific options) lives in the same help-docs file. Pass `--model` through as-is; the API validates.
 
 - Job results now include `resolved_model` (the canonical id that ran; `auto` requests report `auto`) and `conversation_id`. Model ids are canonical (`claude-haiku-4.5`) with tier aliases (`claude-haiku`) - run `descript models` for the live catalog instead of trusting any static list.
+
+- `conversation_id` is response-only - it is absent from the request schema, so a follow-up call cannot continue the same agent conversation. Write every prompt self-contained (state preconditions, e.g. "add captions if there are none, then..."); a clarifying question from the agent still bills a full round (observed 5.4 credits for a question alone). See the `translate` section below, which exists partly because of this constraint.
 
 - AI credit costs per operation live in `docs/help-docs/Track and understand your media minutes and AI credits.md`. The `claude-haiku` alias is the cost-efficient default for credit-sensitive workflows (low tier; run `descript models` for the live catalog).
 
@@ -74,6 +76,18 @@ Free, read-only. Returns `availableModels` (id + cost tier low|medium|high) and 
 
 Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
 
+### translate (composed workflow over POST /jobs/agent, not a standalone endpoint)
+
+`descript translate <project-id> [composition-id] --language "<name>" [--model <m>]` - billable (spends AI credits via the underlying agent job). Snapshots the project's compositions, runs a self-contained agent prompt ("add captions if missing, then translate to <language>, captions only, no dubbing"), then re-fetches the project and diffs to find the new composition. This creation-time diff is the only reliable way to learn which composition carries which language - the API exposes no language field on compositions, and regional-variant translations share an identical title with their sibling (verified live 2026-08-28 on French (France) vs French (Canada)).
+
+- `--no-wait` is rejected at parse time - the mapping needs the after-diff, so there is no fire-and-forget mode.
+
+- Exit semantics - `0` job succeeded, at least one new composition mapped; `2` usage error (missing project id or language, or `--no-wait`); `3` the agent job itself failed (API or job error); `4` question-nothing-created - job succeeded but nothing was created because the agent asked a question or declined, its response is in the output, resubmit with a more complete self-contained prompt; `5` billed-but-mapping-uncaptured - job succeeded and credits were SPENT, but the post-job project re-fetch failed, so the mapping could not be captured. Do NOT re-run (it would bill again) - list compositions with `descript projects get <project-id>` and identify the new one from the agent response in the output.
+
+- Regional variants are promptable and live-verified (2026-08-28): name them exactly as Descript's UI picker does (French (France), French (Canada), Spanish (Spain), Spanish (Latin America), Portuguese (Brazil), Portuguese (Portugal), Chinese (Simplified), Chinese (Traditional), English (UK)).
+
+- Dubbing and lip sync are out of scope for this command; route those through `agent` (skill `descript-edit`) with a purpose-built prompt.
+
 ### published (GET /published_projects/{slug})
 
 Returns metadata, signed `download_url`, and WebVTT `subtitles` for a published composition. Read-only, free. The basis of `descript export` and `descript download-published`. Each call returns a fresh signed `download_url`, so `descript export --resume` can re-download missing files without re-publishing - see `docs/specs/2026-05-21-export-resume-design.md` for the resume semantics table.
@@ -100,11 +114,13 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 
 - `agent` (skill - `descript-edit`) - billable per call. Spends AI credits and media seconds. Model-invocable with in-skill confirmation. Always disclose cost and confirm.
 
+- `translate` (skill - `descript-translate`) - billable per call (agent endpoint). Model-invocable with in-skill confirmation. Always disclose cost and record the returned composition mapping.
+
 - `publish` (skill - `descript-publish`) - not billable on standard plans, but creates a hosted share URL. Model-invocable with in-skill confirmation that defaults access-level to `private`. Elevation to `unlisted` or `public` requires affirmative user language.
 
 - `batch` (skill - `descript-batch`) - conditionally billable (only when manifest items include `agent_prompt`). Always risk-bearing for bulk-write blast radius. **Operator-only via `disable-model-invocation: true`.** The CLI's mandatory `batch plan` then `batch run --confirm` dance is the load-bearing safety.
 
-- `export` (skill - `descript-export`) - triggers one publish per composition. Same risk profile as `publish`, multiplied. Model-invocable with in-skill confirmation; defaults access-level to `private`.
+- `export` (skill - `descript-export`) - triggers one publish per composition. Same risk profile as `publish`, multiplied. Model-invocable with in-skill confirmation; defaults access-level to `private`. Publishes serialize per project (Descript allows one publish job per project at a time); the CLI chains same-project items automatically and waits out already-running locks rather than failing the item. Colliding composition titles (regional translation variants share an identical title) get a " [slug]" folder suffix - read `outputDir` per item from the report rather than assuming title-named folders.
 
 - `download-published` (skill - `descript-download-published`) - read-only, free, unrestricted.
 

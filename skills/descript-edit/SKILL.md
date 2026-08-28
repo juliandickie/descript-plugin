@@ -33,6 +33,10 @@ Run a one-shot Underlord agent edit.
 
 5. On failure, surface the error and do not silently retry (a retry re-spends credits).
 
+6. Write prompts SELF-CONTAINED. The API cannot continue agent conversations (`conversation_id` is response-only, absent from the request schema), and a clarifying question costs a full billable round (observed 5.4 credits for a question alone). State preconditions in the prompt (for example, "Add captions if there are none, then...").
+
+7. Success output now reports the resolved model. For plain translation requests, route to descript-translate instead, which also captures the language mapping.
+
 ## Canonical capability reference
 
 The full Underlord capability list, model picker, example prompts per class, and beta caveats live in the upstream help docs. Always defer to those when reasoning about what Underlord can do.

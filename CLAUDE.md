@@ -21,6 +21,8 @@ Only the agent operation is billable on standard Descript plans (AI credits and 
 
 - `descript-edit` wraps the cost-bearing agent command and is model-invocable WITHOUT `disable-model-invocation`, gated by the in-skill confirmation step so Claude can run edits conversationally. Do not add `disable-model-invocation` to `descript-edit`.
 
+- `descript-translate` wraps the billable agent endpoint for caption translation and is model-invocable WITHOUT `disable-model-invocation`, gated by the in-skill confirmation step (cost disclosure plus explicit language list). Same pattern as `descript-edit`. Do not add dubbing to it - dubbing routes through `descript-edit` with its own confirmation.
+
 - `descript-export` triggers one publish per composition and is model-invocable WITHOUT `disable-model-invocation`, gated by the same in-skill confirmation pattern.
 
 - `descript-download-published` is read-only and unrestricted.
