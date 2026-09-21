@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { runCli } from "../cli/index.js";
+import { COMMAND_FLAGS, GLOBAL_FLAGS } from "../cli/commands/registry.js";
 
 export interface Tool {
   name: string;
@@ -7,17 +8,73 @@ export interface Tool {
   argv: (args: Record<string, unknown>) => string[];
 }
 
-const passthrough = (base: string[]) => (args: Record<string, unknown>): string[] => {
-  const out = [...base];
-  for (const [k, v] of Object.entries(args)) {
-    if (v === true) out.push(`--${k}`);
-    else if (v !== false && v !== undefined && v !== null) out.push(`--${k}`, String(v));
-  }
-  out.push("--json");
-  return out;
-};
+// One builder for every tool, so no tool can quietly drop an argument.
+// - `positionals` are taken by name, in order, and become CLI positionals.
+// - every other argument becomes a CLI flag (snake_case or kebab-case accepted),
+//   and must be a flag the command really reads (COMMAND_FLAGS, shared with the
+//   CLI). Anything else throws; handleRpc turns the throw into an isError result
+//   before the CLI runs.
+// - `special` handles arguments that are not a 1:1 flag (the timecodes object).
+interface Positional { name: string; required?: boolean; fallback?: string; }
+interface ToolSpec {
+  tool: string;
+  base: string[];
+  positionals?: Positional[];
+  defaults?: Record<string, string>;
+  special?: Record<string, (v: unknown) => string[]>;
+}
 
-const TRANSCRIPT_ARGS = ["project_id", "composition_id", "format", "out", "speaker_labels", "markers", "timecodes"];
+const MCP_GLOBAL_FLAGS = GLOBAL_FLAGS.filter((f) => f !== "json" && f !== "help");
+
+function build(spec: ToolSpec): (args: Record<string, unknown>) => string[] {
+  const command = spec.base[0]!;
+  const positionals = spec.positionals ?? [];
+  const special = spec.special ?? {};
+  const flagNames = [...(COMMAND_FLAGS[command] ?? []), ...MCP_GLOBAL_FLAGS];
+  const allowed = [...positionals.map((p) => p.name), ...Object.keys(special), ...flagNames.map((f) => f.replace(/-/g, "_"))];
+  return (args) => {
+    const out = [...spec.base];
+    const seen = new Set<string>();
+    const norm: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(args)) {
+      const key = k.replace(/-/g, "_");
+      if (seen.has(key)) throw new Error(`${spec.tool}: argument "${key}" was given twice (as snake_case and kebab-case)`);
+      seen.add(key);
+      if (!allowed.includes(key)) throw new Error(`${spec.tool}: Unknown argument "${k}". Nothing was run. Allowed: ${allowed.join(", ")}`);
+      norm[key] = v;
+    }
+    const absent = (v: unknown) => v === undefined || v === null || v === "";
+    let gap: string | undefined;
+    for (const p of positionals) {
+      const v = absent(norm[p.name]) ? p.fallback : norm[p.name];
+      if (absent(v)) {
+        if (p.required) throw new Error(`${spec.tool}: missing required argument "${p.name}"`);
+        gap = gap ?? p.name;
+        continue;
+      }
+      if (gap) throw new Error(`${spec.tool}: "${p.name}" needs "${gap}" as well`);
+      if (typeof v === "object") throw new Error(`${spec.tool}: "${p.name}" must be a string`);
+      const text = String(v);
+      if (text.startsWith("--")) throw new Error(`${spec.tool}: "${p.name}" cannot start with "--"`);
+      out.push(text);
+    }
+    const flags: Record<string, unknown> = { ...(spec.defaults ?? {}) };
+    for (const [key, v] of Object.entries(norm)) {
+      if (positionals.some((p) => p.name === key) || key in special) continue;
+      flags[key.replace(/_/g, "-")] = v;
+    }
+    for (const [flag, v] of Object.entries(flags)) {
+      if (v === true) out.push(`--${flag}`);
+      else if (v === false || v === undefined || v === null) continue;
+      // --flag=value keeps values that start with "-" (negative offsets) intact.
+      else out.push(`--${flag}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+    }
+    for (const [key, fn] of Object.entries(special)) out.push(...fn(norm[key]));
+    out.push("--json");
+    return out;
+  };
+}
+
 const TIMECODE_BOOLEANS: Record<string, string> = {
   on_paragraphs: "--timecodes-on-paragraphs",
   on_speakers: "--timecodes-on-speakers",
@@ -27,15 +84,6 @@ const TIMECODE_NUMBERS: Record<string, string> = {
   frequency_seconds: "--timecodes-every",
   offset_seconds: "--timecodes-offset"
 };
-
-// A hand-built argv mapper only forwards the keys it names, so an argument it
-// does not know would be dropped without a trace. Throw instead; handleRpc
-// turns the throw into an isError result before the CLI runs.
-function rejectUnknownKeys(tool: string, args: Record<string, unknown>, allowed: string[]): void {
-  for (const k of Object.keys(args)) {
-    if (!allowed.includes(k)) throw new Error(`${tool}: Unknown argument "${k}". Allowed: ${allowed.join(", ")}`);
-  }
-}
 
 // Maps the API-shaped timecodes object onto the CLI's --timecodes-* flags so
 // the MCP tool and the CLI share one code path (buildTimecodes in registry.ts).
@@ -51,7 +99,7 @@ function timecodeFlags(raw: unknown): string[] {
       if (v) out.push(TIMECODE_BOOLEANS[k]!);
     } else if (k in TIMECODE_NUMBERS) {
       if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`descript_transcript: timecodes.${k} must be a number of seconds`);
-      out.push(TIMECODE_NUMBERS[k]!, String(v));
+      out.push(`${TIMECODE_NUMBERS[k]!}=${v}`);
     } else {
       throw new Error(`descript_transcript: Unknown timecodes key "${k}". Allowed: ${[...Object.keys(TIMECODE_BOOLEANS), ...Object.keys(TIMECODE_NUMBERS)].join(", ")}`);
     }
@@ -59,39 +107,37 @@ function timecodeFlags(raw: unknown): string[] {
   return out;
 }
 
+const STRICT = "Argument names may be snake_case or kebab-case. Unknown arguments are rejected, never ignored.";
+
 export const TOOLS: Tool[] = [
-  { name: "descript_status", description: "Check Descript API auth and status", argv: passthrough(["status"]) },
-  { name: "descript_import", description: "Import media and create a project (flags: url, file, name, no-wait)", argv: passthrough(["import"]) },
-  { name: "descript_agent", description: "Run an Underlord agent edit (flags: project-id, prompt, model, no-wait)", argv: passthrough(["agent"]) },
-  { name: "descript_publish", description: "Publish a composition (flags: project-id, composition-id, media-type, resolution)", argv: passthrough(["publish"]) },
-  { name: "descript_jobs", description: "Inspect or cancel jobs. args: sub=list|get|cancel, id", argv: (a) => ["jobs", String(a.sub ?? "list"), ...(a.id ? [String(a.id)] : []), "--json"] },
-  { name: "descript_projects", description: "List or fetch projects. args: sub=list|get, id", argv: (a) => ["projects", String(a.sub ?? "list"), ...(a.id ? [String(a.id)] : []), "--json"] },
-  { name: "descript_published", description: "Get published project metadata. arg: slug", argv: (a) => ["published", String(a.slug ?? ""), "--json"] },
-  { name: "descript_edit_in_descript", description: "Partner-gated import URL exchange (flag: schema path)", argv: passthrough(["edit-in-descript"]) },
-  { name: "descript_batch", description: "Bulk runner. args: sub=plan|run, file; flag confirm", argv: (a) => ["batch", String(a.sub ?? "plan"), String(a.file ?? ""), ...(a.confirm ? ["--confirm"] : []), "--json"] },
-  { name: "descript_models", description: "List available Underlord agent models and aliases (live catalog)", argv: passthrough(["models"]) },
-  { name: "descript_transcript", description: "Export a composition transcript, free and instant, no publish. args: project_id, composition_id?, format=txt|markdown|html|rtf|docx|srt, out? (file path, missing parent folders are created; required for docx), speaker_labels?=off|changes|every_paragraph, markers?, timecodes? (object, any of on_paragraphs, on_speakers, on_markers as booleans, frequency_seconds, offset_seconds as numbers; adds [HH:MM:SS] marks). Unknown arguments are rejected, never ignored.", argv: (a) => {
-      rejectUnknownKeys("descript_transcript", a, TRANSCRIPT_ARGS);
-      return [
-        "transcript",
-        String(a.project_id ?? ""),
-        ...(a.composition_id ? [String(a.composition_id)] : []),
-        "--format", String(a.format ?? "txt"),
-        ...(a.speaker_labels ? ["--speaker-labels", String(a.speaker_labels)] : []),
-        ...(a.markers === true ? ["--markers"] : []),
-        ...timecodeFlags(a.timecodes),
-        ...(a.out ? ["--out", String(a.out)] : []),
-        "--json"
-      ];
-    } },
-  { name: "descript_translate", description: "Translate a composition's captions via Underlord and report which NEW composition carries the requested language (creation-time mapping). BILLABLE - spends AI credits (translate captions ~10 plus agent message credits); confirm with the user before calling. args: project_id, composition_id?, language (e.g. \"French (Canada)\" - regional variants supported), model?", argv: (a) => [
-      "translate",
-      String(a.project_id ?? ""),
-      ...(a.composition_id ? [String(a.composition_id)] : []),
-      "--language", String(a.language ?? ""),
-      ...(a.model ? ["--model", String(a.model)] : []),
-      "--json"
-    ] },
+  { name: "descript_status", description: `Check Descript API auth and status. args: profile?. ${STRICT}`,
+    argv: build({ tool: "descript_status", base: ["status"] }) },
+  { name: "descript_import", description: `Import media and create a project (spends media seconds). args: url | file | media (JSON), name?, folder?, team_access?=edit|comment|view|none (required with folder), language?, workspace?, project_id? (add into an existing project), compositions? (JSON array), content_type?, callback_url?, no_wait?. ${STRICT}`,
+    argv: build({ tool: "descript_import", base: ["import"] }) },
+  { name: "descript_agent", description: `Run an Underlord agent edit. BILLABLE - spends AI credits; confirm with the user before calling. args: prompt, project_id | project_name, composition_id?, model?, team_access?, callback_url?, no_wait?. ${STRICT}`,
+    argv: build({ tool: "descript_agent", base: ["agent"] }) },
+  { name: "descript_publish", description: `Publish a composition. args: project_id, composition_id?, media_type?=Video|Audio, resolution?=480p|720p|1080p|1440p|4K, access_level?=private|unlisted|public (pass private unless the user asked otherwise), callback_url?, no_wait?. ${STRICT}`,
+    argv: build({ tool: "descript_publish", base: ["publish"] }) },
+  { name: "descript_jobs", description: `Inspect or cancel jobs. args: sub=list|get|cancel (default list), id (for get and cancel); list filters project_id?, type?=import/project_media|agent, created_after?, created_before?, limit? (1-100), cursor?. ${STRICT}`,
+    argv: build({ tool: "descript_jobs", base: ["jobs"], positionals: [{ name: "sub", fallback: "list" }, { name: "id" }] }) },
+  { name: "descript_projects", description: `List or fetch projects. args: sub=list|get (default list), id (for get); list filters name?, folder_path?, created_by?, created_after?, created_before?, updated_after?, updated_before?, sort?=name|created_at|updated_at|last_viewed_at, direction?=asc|desc, limit? (1-100), cursor?. ${STRICT}`,
+    argv: build({ tool: "descript_projects", base: ["projects"], positionals: [{ name: "sub", fallback: "list" }, { name: "id" }] }) },
+  { name: "descript_published", description: `Get published project metadata. arg: slug. ${STRICT}`,
+    argv: build({ tool: "descript_published", base: ["published"], positionals: [{ name: "slug", required: true }] }) },
+  { name: "descript_edit_in_descript", description: `Partner-gated import URL exchange. arg: schema (path to a JSON file). ${STRICT}`,
+    argv: build({ tool: "descript_edit_in_descript", base: ["edit-in-descript"] }) },
+  { name: "descript_batch", description: `Bulk runner. args: sub=plan|run (default plan), file (manifest path), confirm? (required for run). ${STRICT}`,
+    argv: build({ tool: "descript_batch", base: ["batch"], positionals: [{ name: "sub", fallback: "plan" }, { name: "file", required: true }] }) },
+  { name: "descript_models", description: `List available Underlord agent models and aliases (live catalog). ${STRICT}`,
+    argv: build({ tool: "descript_models", base: ["models"] }) },
+  { name: "descript_transcript", description: `Export a composition transcript, free and instant, no publish. args: project_id, composition_id?, format=txt|markdown|html|rtf|docx|srt (default txt), out? (file path, missing parent folders are created; required for docx), speaker_labels?=off|changes|every_paragraph, markers?, timecodes? (object, any of on_paragraphs, on_speakers, on_markers as booleans, frequency_seconds, offset_seconds as numbers; adds [HH:MM:SS] marks). ${STRICT}`,
+    argv: build({ tool: "descript_transcript", base: ["transcript"],
+      positionals: [{ name: "project_id", required: true }, { name: "composition_id" }],
+      defaults: { format: "txt" },
+      special: { timecodes: timecodeFlags } }) },
+  { name: "descript_translate", description: `Translate a composition's captions via Underlord and report which NEW composition carries the requested language (creation-time mapping). BILLABLE - spends AI credits (translate captions ~10 plus agent message credits); confirm with the user before calling. args: project_id, composition_id?, language (e.g. "French (Canada)" - regional variants supported), model?, no_wait?. ${STRICT}`,
+    argv: build({ tool: "descript_translate", base: ["translate"],
+      positionals: [{ name: "project_id", required: true }, { name: "composition_id" }] }) },
 ];
 
 export interface ExecResult { code: number; stdout: string; stderr: string; }

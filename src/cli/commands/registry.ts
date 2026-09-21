@@ -133,6 +133,39 @@ function parseConcurrency(ctx: Ctx, raw: string | undefined, fallback: number): 
   return n;
 }
 
+// Flags every command accepts.
+export const GLOBAL_FLAGS: readonly string[] = ["json", "help", "token", "profile"];
+
+// Every flag each command reads, and nothing else. runCli rejects a flag that is
+// not listed here, so a typo (--timecode-on-paragraphs) or an option the command
+// never supported is a usage error instead of a silent no-op. The MCP shim
+// validates against the same table. Adding a flag to a command means adding it
+// here; tests/cli/cli.test.ts scans this file to enforce that.
+const TIMECODE_FLAGS = ["timecodes-every", "timecodes-offset", "timecodes-on-paragraphs", "timecodes-on-markers", "timecodes-on-speakers"];
+export const COMMAND_FLAGS: Record<string, readonly string[]> = {
+  status: [],
+  models: [],
+  transcript: ["format", "out", "speaker-labels", "markers", ...TIMECODE_FLAGS],
+  translate: ["language", "model", "no-wait"],
+  config: ["editor"],
+  import: ["url", "file", "media", "name", "folder", "language", "project-id", "workspace", "compositions", "content-type", "team-access", "callback-url", "no-wait"],
+  agent: ["prompt", "project-id", "project-name", "composition-id", "model", "team-access", "callback-url", "no-wait"],
+  publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "callback-url", "no-wait"],
+  jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
+  projects: ["name", "folder-path", "created-by", "created-after", "created-before", "updated-after", "updated-before", "sort", "direction", "limit", "cursor"],
+  published: [],
+  "download-published": ["formats", "concurrency", "output-dir", "no-end-marker", "slugs", "report"],
+  "edit-in-descript": ["schema"],
+  export: ["formats", "concurrency", "output-dir", "no-end-marker", "media-type", "resolution", "access-level", "projects", "composition-ids", "resume", "names", "name-template"],
+  batch: ["confirm"]
+};
+
+// Returns the flags the command does not accept (empty when all are fine).
+export function unknownFlags(command: string, flags: Record<string, unknown>): string[] {
+  const allowed = COMMAND_FLAGS[command] ?? [];
+  return Object.keys(flags).filter((f) => !GLOBAL_FLAGS.includes(f) && !allowed.includes(f));
+}
+
 export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
   async status(ctx) {
     const r = await client(ctx).getStatus();
@@ -394,6 +427,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       emit(ctx.io, `${r.data.length} job(s)`, r);
       return 0;
     }
+    if ((sub === "get" || sub === "cancel") && !ctx.args[1]) { fail(ctx.io, `Usage: descript jobs ${sub} <id>`); return 2; }
     if (sub === "get") { const r = await c.getJob(String(ctx.args[1])); emit(ctx.io, `Job ${r.job_id}: ${r.job_state}`, r); return 0; }
     if (sub === "cancel") { await c.cancelJob(String(ctx.args[1])); emit(ctx.io, `Cancelled ${ctx.args[1]}`, { cancelled: ctx.args[1] }); return 0; }
     fail(ctx.io, "Usage: descript jobs list|get <id>|cancel <id>");
@@ -434,6 +468,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       return 0;
     }
     if (sub === "get") {
+      if (!ctx.args[1]) { fail(ctx.io, "Usage: descript projects get <id>"); return 2; }
       const r = await c.getProject(String(ctx.args[1]));
       const pubs = r.publishes ?? [];
       const lines = [`Project ${r.name}`];

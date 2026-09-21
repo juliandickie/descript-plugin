@@ -75,9 +75,68 @@ a fresh per-course folder hit it on the first file every time.
   `{"on_paragraf": true}` and a top-level `timecode` both returned `isError: true` with the
   allowed keys listed, and no API call was made.
 
+## 3. Follow-up the same day - the same silent drop, everywhere else
+
+Asked to fix the rest, a wider look found the gap was larger than the five hand-built
+mappers named in section 1. Three layers all dropped input without a word.
+
+**Hand-built mappers dropped real, supported options.** `descript_projects` and
+`descript_jobs` forwarded only `sub` and `id`, so every list filter the CLI supports
+(`name`, `folder_path`, `sort`, `limit`, `project_id`, `type`, date ranges, `cursor`) was
+discarded. Live on 21 September 2026, `descript_projects {"name": "Cold Calling", "limit": 5}`
+against the installed 0.7.0 returned 20 unfiltered projects. An agent asking "is there a
+project called X" got the first page of the whole drive and no hint the filter was ignored.
+
+**The `passthrough` tools were not safe either**, contrary to section 1. They turned every
+key into `--<key>` verbatim, so a snake_case argument became a flag the CLI never reads.
+`descript_publish {"project_id": "p", "composition_id": "c", "access_level": "private"}`
+produced `--composition_id` and `--access_level`, both ignored. For publish that is the
+risky one: the caller believes they pinned a composition and an access level and did neither.
+Object values were also sent as the literal text `[object Object]`.
+
+**The CLI itself never rejected an unknown flag.** `--timecode-on-paragraphs` (one missing
+letter) ran happily and produced a transcript with no timecodes. This is the root: every
+surface above it inherits the behaviour.
+
+**Fix, at the root.**
+
+- `src/cli/commands/registry.ts` gains `COMMAND_FLAGS`, the exact set of flags each command
+  reads. `runCli` rejects anything else with exit 2, names the offender, lists what is
+  allowed, and says nothing was run. A test scans `registry.ts` and fails if a command reads
+  a flag that the table does not list, so the table cannot drift.
+- `src/mcp/server.ts` has ONE argv builder for all twelve tools. Arguments may be snake_case
+  or kebab-case (giving both is an error). Positionals are taken by name, everything else
+  must be a flag from `COMMAND_FLAGS` for that command, objects are sent as JSON, values use
+  `--flag=value` so a leading `-` survives. Unknown arguments, missing required positionals
+  and positionals that look like flags all return `isError` before the CLI runs.
+- `descript_projects` and `descript_jobs` now expose every list filter. Tool descriptions
+  list the real arguments.
+- `jobs get`, `jobs cancel` and `projects get` without an id are usage errors. They used to
+  call the API with the literal id `undefined`.
+
+**Behaviour change to know about.** Anything that relied on a flag being ignored now fails
+with exit 2. Every flag documented in `README.md`, the CLI usage text and all skills was
+checked against the table and is accepted, and the 310 pre-existing tests passed unchanged
+with rejection switched on.
+
+**Verification.** `npm test`, 322 of 322. Live over stdio against the rebuilt server:
+name filter returns 2 projects (0.7.0 returns 20), `descript_jobs {"limit": 2}` returns 2,
+`descript_status` works, `descript_publish` with `acess_level` is refused before any call,
+and the CLI typo above exits 2. Only read-only calls were made; nothing was published,
+imported or billed.
+
+**Still open, needs a decision.** The CLI usage text says `publish` defaults to
+`--access-level private`. It does not. When the flag is omitted the CLI sends no
+`access_level`, and the pinned spec says "If omitted, the drive's configured default is
+used". The `descript-publish` skill passes the level explicitly, so the skill path is safe,
+but a bare `descript publish --project-id X` or a `descript_publish` call without
+`access_level` publishes at whatever the drive default is. Either make the CLI send
+`private` when the flag is absent, or correct the usage text. Not changed here because it
+alters behaviour on a risk-bearing command. Minor: `serverInfo.version` in the MCP
+`initialize` reply still says 0.5.0.
+
 ## Not done here
 
 - The installed plugin cache (`~/.claude/plugins/cache/outfit/descript/0.7.0`) is untouched
   and still has the gap until a release ships. Until then use the CLI form above for timecodes.
-- Hardening the other hand-built MCP mappers against unknown arguments.
 - No version bump, tag or release. That is a separate decision.

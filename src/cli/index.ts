@@ -1,4 +1,4 @@
-import { COMMANDS, mapError, type Ctx } from "./commands/registry.js";
+import { COMMANDS, COMMAND_FLAGS, GLOBAL_FLAGS, mapError, unknownFlags, type Ctx } from "./commands/registry.js";
 import type { IO } from "./output.js";
 import { fail } from "./output.js";
 
@@ -75,6 +75,12 @@ export async function runCli(argv: string[], opts: RunOptions = {}): Promise<num
   }
   const handler = COMMANDS[command];
   if (!handler) { fail(io, `Unknown command "${command}".\n\n${USAGE}`); return 2; }
+  const unknown = unknownFlags(command, flags);
+  if (unknown.length > 0) {
+    const allowed = [...(COMMAND_FLAGS[command] ?? []), ...GLOBAL_FLAGS].map((f) => `--${f}`).join(", ");
+    fail(io, `Unknown option${unknown.length > 1 ? "s" : ""} for "${command}": ${unknown.map((f) => `--${f}`).join(", ")}. Nothing was run. Allowed: ${allowed}`);
+    return 2;
+  }
   const ctx: Ctx = { args, flags, env: opts.env ?? process.env, io };
   try {
     return await handler(ctx);

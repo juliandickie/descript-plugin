@@ -1177,3 +1177,54 @@ test("export --names duplicate language mapping exits 2 naming both compositions
     assert.match(out.join(""), /both render to/);
     rmSync(dir, { recursive: true, force: true });
 });
+// =========================================================================
+// Unknown flags are usage errors, never silent no-ops (2026-09-21 field note).
+// =========================================================================
+test("an unknown flag is a usage error and nothing runs", async () => {
+    installNoNetwork();
+    for (const argv of [
+        ["transcript", "p1", "--format", "txt", "--timecode-on-paragraphs"],
+        ["publish", "--project-id", "p1", "--access_level", "private"],
+        ["projects", "list", "--folder", "Courses"],
+        ["status", "--verbose"]
+    ]) {
+        const c = capture();
+        const code = await runCli(argv, { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+        assert.equal(code, 2, argv.join(" "));
+        assert.match(c.out.join(""), /Unknown option/);
+        assert.match(c.out.join(""), /Nothing was run/);
+    }
+});
+test("jobs get, jobs cancel and projects get without an id are usage errors before any API call", async () => {
+    installNoNetwork();
+    for (const argv of [["jobs", "get"], ["jobs", "cancel"], ["projects", "get"]]) {
+        const c = capture();
+        assert.equal(await runCli(argv, { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write }), 2, argv.join(" "));
+    }
+});
+test("COMMAND_FLAGS lists every flag the registry source reads, per command", async () => {
+    const { COMMAND_FLAGS, COMMANDS, GLOBAL_FLAGS } = await import("../../src/cli/commands/registry.js");
+    assert.deepEqual(Object.keys(COMMAND_FLAGS).sort(), Object.keys(COMMANDS).sort());
+    // dist/tests/cli -> repo root
+    const root = join(import.meta.dirname, "..", "..", "..");
+    const src = readFileSync(join(root, "src", "cli", "commands", "registry.ts"), "utf8");
+    const body = src.slice(src.indexOf("export const COMMANDS"));
+    const parts = body.split(/\n  async "?([a-z-]+)"?\(ctx\) \{/);
+    assert.ok(parts.length > 20, "registry.ts layout changed; update this scan");
+    for (let i = 1; i < parts.length; i += 2) {
+        const name = parts[i];
+        const block = parts[i + 1];
+        const read = new Set();
+        for (const m of block.matchAll(/flags\.([a-zA-Z]+)/g))
+            read.add(m[1]);
+        for (const m of block.matchAll(/flags\["([a-z-]+)"\]/g))
+            read.add(m[1]);
+        for (const m of block.matchAll(/badEnum\(ctx, "([a-z-]+)"/g))
+            read.add(m[1]);
+        if (block.includes("noWait(ctx)"))
+            read.add("no-wait");
+        for (const f of read) {
+            assert.ok(GLOBAL_FLAGS.includes(f) || COMMAND_FLAGS[name].includes(f), `command "${name}" reads --${f} but COMMAND_FLAGS does not list it`);
+        }
+    }
+});
