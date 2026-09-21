@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed - `package-lock.json` still said 0.3.0.** Resynced to 0.7.1 (version lines only, no dependency changed). A test now fails when `package.json`, `package-lock.json` and `.claude-plugin/plugin.json` disagree, so a release cannot skip one again.
+
 ## 0.7.1 - 2026-09-21
 
 No more silent drops. MCP argument handling, transcript timecodes and a private publish default, from the 2026-09-21 field note (`docs/field-reports/2026-09-21-mcp-transcript-timecodes-ignored-and-out-enoent.md`).
