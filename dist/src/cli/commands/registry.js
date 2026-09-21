@@ -147,7 +147,7 @@ export const COMMAND_FLAGS = {
     config: ["editor"],
     import: ["url", "file", "media", "name", "folder", "language", "project-id", "workspace", "compositions", "content-type", "team-access", "callback-url", "no-wait"],
     agent: ["prompt", "project-id", "project-name", "composition-id", "model", "team-access", "callback-url", "no-wait"],
-    publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "callback-url", "no-wait"],
+    publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "drive-default-access", "callback-url", "no-wait"],
     jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
     projects: ["name", "folder-path", "created-by", "created-after", "created-before", "updated-after", "updated-before", "sort", "direction", "limit", "cursor"],
     published: [],
@@ -435,12 +435,21 @@ export const COMMANDS = {
             return 2;
         if (badEnum(ctx, "access-level", ACCESS_LEVEL))
             return 2;
+        // Private unless told otherwise. The API falls back to the drive's configured
+        // default when access_level is omitted, which can be externally reachable, so
+        // omission has to be an explicit choice (--drive-default-access), never an accident.
+        const driveDefault = ctx.flags["drive-default-access"] === true;
+        if (driveDefault && ctx.flags["access-level"] !== undefined) {
+            fail(ctx.io, "--drive-default-access cannot be combined with --access-level");
+            return 2;
+        }
+        const accessLevel = driveDefault ? undefined : (ctx.flags["access-level"] ?? "private");
         const req = {
             project_id: projectId,
             composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
             media_type: ctx.flags["media-type"] || undefined,
             resolution: ctx.flags.resolution || undefined,
-            access_level: ctx.flags["access-level"] || undefined,
+            access_level: accessLevel,
             ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {})
         };
         if (noWait(ctx)) {

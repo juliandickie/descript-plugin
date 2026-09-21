@@ -30,6 +30,8 @@ Global flags: --json, --no-wait, --token, --profile.
 
 `descript transcript <pid> [cid] --format markdown --timecodes-on-paragraphs --out <path>` exports a transcript for free, with no publish. Timecode flags are `--timecodes-every <sec>`, `--timecodes-offset <sec>`, `--timecodes-on-paragraphs`, `--timecodes-on-speakers` and `--timecodes-on-markers`; `--out` creates missing parent folders. The MCP tool `descript_transcript` takes the same options as a `timecodes` object, for example `{"on_paragraphs": true, "on_speakers": true}`, and rejects arguments it does not recognise instead of ignoring them.
 
+`descript publish` sends `--access-level private` unless you pass a level (v0.7.1); `--drive-default-access` uses the drive's configured default instead. The same default applies to the MCP tool and to batch manifests.
+
 Unknown flags are usage errors (exit 2, nothing runs), so a typo never silently changes the result. The MCP tools follow the same rule: each accepts only the arguments its command reads, in snake_case or kebab-case, and rejects anything else before running. `descript_projects` and `descript_jobs` accept every list filter the CLI does.
 
 ## Skills

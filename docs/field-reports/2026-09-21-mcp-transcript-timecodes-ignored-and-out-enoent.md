@@ -2,7 +2,7 @@
 
 Additive field note. Two gaps found on 21 September 2026 while exporting transcripts through
 the MCP tool from a Claude desktop session running the installed v0.7.0 plugin. Both are
-fixed on branch `fix/mcp-transcript-timecodes` (see "Fix" below); this note records what was
+fixed in v0.7.1 (see "Fix" below); this note records what was
 observed and why it happened.
 
 ## 1. The MCP tool accepted `timecodes` without error and then ignored it
@@ -125,18 +125,16 @@ name filter returns 2 projects (0.7.0 returns 20), `descript_jobs {"limit": 2}` 
 and the CLI typo above exits 2. Only read-only calls were made; nothing was published,
 imported or billed.
 
-**Still open, needs a decision.** The CLI usage text says `publish` defaults to
-`--access-level private`. It does not. When the flag is omitted the CLI sends no
-`access_level`, and the pinned spec says "If omitted, the drive's configured default is
-used". The `descript-publish` skill passes the level explicitly, so the skill path is safe,
-but a bare `descript publish --project-id X` or a `descript_publish` call without
-`access_level` publishes at whatever the drive default is. Either make the CLI send
-`private` when the flag is absent, or correct the usage text. Not changed here because it
-alters behaviour on a risk-bearing command. Minor: `serverInfo.version` in the MCP
-`initialize` reply still says 0.5.0.
+**Publish default, decided and fixed the same day (v0.7.1).** The CLI usage text said
+`publish` defaulted to `--access-level private`. It did not. When the flag was omitted the
+CLI sent no `access_level`, and the pinned spec says "If omitted, the drive's configured
+default is used". Julian's call: default to private. `descript publish`, `descript_publish`
+and batch manifest publish blocks now send `private` when no level is given, and
+`--drive-default-access` is the explicit opt-out. `serverInfo.version` in the MCP
+`initialize` reply was a hardcoded `0.5.0` in our own `src/mcp/server.ts` (not something
+Descript supplies); it now reads `package.json`.
 
-## Not done here
+## Release
 
-- The installed plugin cache (`~/.claude/plugins/cache/outfit/descript/0.7.0`) is untouched
-  and still has the gap until a release ships. Until then use the CLI form above for timecodes.
-- No version bump, tag or release. That is a separate decision.
+Shipped as v0.7.1 on 21 September 2026. Installed copies older than 0.7.1 still have every
+gap above; on those, use the CLI with exact flag names and check the output.

@@ -12,7 +12,7 @@ Commands:
   models                         List available Underlord models and aliases (live from the API)
   transcript <pid> [cid] [...]   Export a transcript file, free and instant, no publish (--format txt|markdown|html|rtf|docx|srt, --out <path>, --speaker-labels off|changes|every_paragraph, --markers, --timecodes-every/-offset/-on-paragraphs/-on-markers/-on-speakers)
   translate <pid> [cid] [...]    Translate captions via Underlord, capturing which new composition is which language (--language "French (Canada)", --model; BILLABLE - spends AI credits; regional variants supported)
-  publish --project-id [...]     Publish a composition (default --access-level private; elevate explicitly)
+  publish --project-id [...]     Publish a composition (--access-level private|unlisted|public, default private; --drive-default-access uses the drive's configured default instead)
   jobs list|get <id>|cancel <id> Inspect or cancel jobs (list --project-id, --type, --created-after, --created-before, --limit 1-100, --cursor)
   projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
   published <slug>               Get published project metadata

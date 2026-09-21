@@ -236,3 +236,31 @@ test("every argv a tool can build is accepted by the CLI flag table", async () =
     assert.deepEqual(unknownFlags(command, flags), [], name);
   }
 });
+
+test("initialize reports the plugin's real version from package.json", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", "..", "package.json"), "utf8"));
+  const r = await handleRpc({ jsonrpc: "2.0", id: 40, method: "initialize", params: {} }, async () => ({ code: 0, stdout: "", stderr: "" }));
+  assert.equal(r!.result.serverInfo.version, pkg.version);
+  assert.match(r!.result.serverInfo.version, /^\d+\.\d+\.\d+$/);
+});
+
+test("descript_publish end to end - no access_level means private in the API request", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: { job_id: "j1" } }]);
+  const prev = process.env.DESCRIPT_API_TOKEN;
+  process.env.DESCRIPT_API_TOKEN = "t";
+  try {
+    const r = await handleRpc(
+      { jsonrpc: "2.0", id: 41, method: "tools/call", params: { name: "descript_publish", arguments: { project_id: "p1", composition_id: "c1", no_wait: true } } },
+      realExecutor
+    );
+    assert.equal(r!.result.isError, false, r!.result.content[0].text);
+    const body = JSON.parse(calls[0]!.body as string);
+    assert.equal(body.access_level, "private");
+    assert.equal(body.composition_id, "c1");
+  } finally {
+    if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
+    restoreFetch();
+  }
+});

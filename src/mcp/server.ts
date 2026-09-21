@@ -1,6 +1,20 @@
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { runCli } from "../cli/index.js";
 import { COMMAND_FLAGS, GLOBAL_FLAGS } from "../cli/commands/registry.js";
+
+// The plugin's own version, read from package.json at the plugin root
+// (dist/src/mcp/server.js -> ../../../package.json) so it cannot go stale.
+function readPluginVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "package.json"), "utf8")) as { version?: unknown };
+    return typeof pkg.version === "string" ? pkg.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+export const PLUGIN_VERSION = readPluginVersion();
 
 export interface Tool {
   name: string;
@@ -116,7 +130,7 @@ export const TOOLS: Tool[] = [
     argv: build({ tool: "descript_import", base: ["import"] }) },
   { name: "descript_agent", description: `Run an Underlord agent edit. BILLABLE - spends AI credits; confirm with the user before calling. args: prompt, project_id | project_name, composition_id?, model?, team_access?, callback_url?, no_wait?. ${STRICT}`,
     argv: build({ tool: "descript_agent", base: ["agent"] }) },
-  { name: "descript_publish", description: `Publish a composition. args: project_id, composition_id?, media_type?=Video|Audio, resolution?=480p|720p|1080p|1440p|4K, access_level?=private|unlisted|public (pass private unless the user asked otherwise), callback_url?, no_wait?. ${STRICT}`,
+  { name: "descript_publish", description: `Publish a composition. args: project_id, composition_id?, media_type?=Video|Audio, resolution?=480p|720p|1080p|1440p|4K, access_level?=private|unlisted|public (default private; elevate only when the user asked for an externally reachable URL), drive_default_access? (use the drive's configured default instead), callback_url?, no_wait?. ${STRICT}`,
     argv: build({ tool: "descript_publish", base: ["publish"] }) },
   { name: "descript_jobs", description: `Inspect or cancel jobs. args: sub=list|get|cancel (default list), id (for get and cancel); list filters project_id?, type?=import/project_media|agent, created_after?, created_before?, limit? (1-100), cursor?. ${STRICT}`,
     argv: build({ tool: "descript_jobs", base: ["jobs"], positionals: [{ name: "sub", fallback: "list" }, { name: "id" }] }) },
@@ -162,7 +176,7 @@ export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcRes
     return { jsonrpc: "2.0", id: req.id, result: {
       protocolVersion: "2024-11-05",
       capabilities: { tools: {} },
-      serverInfo: { name: "descript", version: "0.5.0" }
+      serverInfo: { name: "descript", version: PLUGIN_VERSION }
     } };
   }
   if (req.method === "tools/list") {

@@ -38,7 +38,7 @@ test("runBatch refuses without confirm", async () => {
 });
 
 test("runBatch executes import then edit then publish per item", async () => {
-  installMockFetch([
+  const { calls } = installMockFetch([
     { status: 201, json: { job_id: "ij", drive_id: "d", project_id: "p", project_url: "u" } },
     { status: 200, json: { job_id: "ij", job_type: "import/project_media", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
         result: { status: "success", media_status: {}, media_seconds_used: 1, created_compositions: [{ id: "c", name: "Cut" }] } } },
@@ -55,6 +55,10 @@ test("runBatch executes import then edit then publish per item", async () => {
   assert.equal(report.items[0]!.shareUrl, "https://share/x");
   assert.equal(report.succeeded, 1);
   assert.equal(report.failed, 0);
+  // The manifest's publish block names no access_level, so it must go out private
+  // rather than at the drive's configured default.
+  const publishCall = calls.find((c) => typeof c.body === "string" && c.body.includes('"media_type"'))!;
+  assert.equal(JSON.parse(publishCall.body as string).access_level, "private");
 });
 
 test("parseManifest rejects local file sources (URL-only batch)", () => {

@@ -1522,3 +1522,37 @@ test("COMMAND_FLAGS lists every flag the registry source reads, per command", as
     }
   }
 });
+
+// =========================================================================
+// v0.7.1 - publish is private unless told otherwise. The API uses the drive's
+// configured default when access_level is omitted, so omission must be explicit.
+// =========================================================================
+
+async function publishBody(extra: string[]): Promise<{ code: number; body: any; calls: number; out: string }> {
+  const { calls } = installMockFetch([{ status: 201, json: { job_id: "j1" } }]);
+  const c = capture();
+  const code = await runCli(["publish", "--project-id", "p1", "--no-wait", "--json", ...extra],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  return { code, body: calls[0] ? JSON.parse(calls[0].body as string) : undefined, calls: calls.length, out: c.out.join("") };
+}
+
+test("publish sends access_level private when no level is given", async () => {
+  const r = await publishBody([]);
+  assert.equal(r.code, 0);
+  assert.equal(r.body.access_level, "private");
+});
+
+test("publish sends the level the caller asked for", async () => {
+  assert.equal((await publishBody(["--access-level", "unlisted"])).body.access_level, "unlisted");
+  assert.equal((await publishBody(["--access-level", "public"])).body.access_level, "public");
+});
+
+test("publish --drive-default-access omits access_level, and cannot be combined with --access-level", async () => {
+  const r = await publishBody(["--drive-default-access"]);
+  assert.equal(r.code, 0);
+  assert.equal("access_level" in r.body, false);
+  const clash = await publishBody(["--drive-default-access", "--access-level", "public"]);
+  assert.equal(clash.code, 2);
+  assert.equal(clash.calls, 0);
+  assert.match(clash.out, /cannot be combined/);
+});

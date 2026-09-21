@@ -91,7 +91,8 @@ async function runItem(client, item, m, opts) {
                 project_id: imp.projectId,
                 media_type: item.publish.media_type,
                 resolution: item.publish.resolution,
-                access_level: item.publish.access_level,
+                // Private unless the manifest says otherwise; omitting it would publish at the drive's default.
+                access_level: item.publish.access_level ?? "private",
                 callback_url: m.callback_url
             }, opts.poll);
             if (!pub.ok)

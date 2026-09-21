@@ -1,14 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.7.1 - 2026-09-21
 
-MCP argument handling and transcript timecodes, from the 2026-09-21 field note (`docs/field-reports/2026-09-21-mcp-transcript-timecodes-ignored-and-out-enoent.md`).
+No more silent drops. MCP argument handling, transcript timecodes and a private publish default, from the 2026-09-21 field note (`docs/field-reports/2026-09-21-mcp-transcript-timecodes-ignored-and-out-enoent.md`).
 
 - **Fixed - MCP `descript_transcript` silently ignored `timecodes`.** The tool now accepts `timecodes` as the API-shaped object (`on_paragraphs`, `on_speakers`, `on_markers` as booleans, `frequency_seconds`, `offset_seconds` as numbers) and maps it onto the CLI's `--timecodes-*` flags, so both surfaces share one code path. Previously the argument was accepted, dropped, and the export came back without `[HH:MM:SS]` marks.
 - **`descript_transcript` rejects what it does not understand** - an unknown top-level argument, a non-object `timecodes`, an unknown `timecodes` key, or a wrong value type returns `isError` with the allowed list before the CLI runs, instead of succeeding with quietly wrong output.
 - **`--timecodes-on-speakers`** - new CLI flag for the API's `on_speakers` option (timecodes at speaker changes), which no surface could request before.
 - **Fixed - every other MCP tool dropped arguments too.** `descript_projects` and `descript_jobs` discarded all list filters (a `name` filter returned the unfiltered first page), and the six passthrough tools turned snake_case arguments such as `access_level` and `composition_id` into flags the CLI never reads. All twelve tools now share one argv builder - snake_case or kebab-case accepted, objects sent as JSON, every list filter exposed, and unknown arguments, missing required arguments and flag-looking positionals rejected before the CLI runs.
 - **Changed - the CLI rejects unknown flags.** A flag the command does not read (for example the typo `--timecode-on-paragraphs`) is now exit 2 with the allowed list, instead of a silent no-op. `COMMAND_FLAGS` in `registry.ts` is the single table, shared with the MCP shim and enforced by a source-scanning test. Scripts that passed a stray flag will now fail loudly.
+- **Changed - publish is private unless told otherwise.** The usage text claimed `--access-level` defaulted to private, but the CLI sent nothing and the API then used the drive's configured default, which can be externally reachable. `descript publish`, the MCP `descript_publish` tool and batch manifest publish blocks now send `private` when no level is given. `--drive-default-access` (MCP `drive_default_access`) is the explicit way to use the drive default, and cannot be combined with `--access-level`. `descript export` already defaulted to private.
+- **Fixed - MCP `initialize` reported version 0.5.0.** `serverInfo.version` was a hardcoded string; it is now read from `package.json`.
 - **Fixed - `jobs get`, `jobs cancel` and `projects get` without an id** are usage errors; they used to call the API with the literal id `undefined`.
 - **Fixed - `transcript --out` failed with ENOENT on a missing parent folder.** Missing parent folders are now created before the file is written.
 

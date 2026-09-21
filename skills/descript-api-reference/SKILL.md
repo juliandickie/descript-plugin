@@ -44,7 +44,7 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 
 ### publish (POST /jobs/publish)
 
-Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `private`; the v0.2.1 CLI rejects `drive` at parse time).
+Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `private`; the v0.2.1 CLI rejects `drive` at parse time). The API uses the drive's configured default when `access_level` is omitted, so since v0.7.1 the CLI, the MCP tool and batch manifests send `private` unless a level is given; `--drive-default-access` (MCP `drive_default_access`) is the explicit opt-out.
 
 - **Republish keying** - the same `(project_id, composition_id, media_type)` reuses the prior share URL on every subsequent publish; bookmarks keep working. A Video publish and an Audio publish of the same composition produce two distinct share URLs.
 

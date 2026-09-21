@@ -23,7 +23,7 @@ Per the Stream B model-invocation policy ADR (`docs/specs/2026-05-20-model-invoc
 
 3. Before submitting, state the full intended command (project id, composition id, media type, resolution, access level) and get explicit user confirmation.
 
-4. Run - `descript publish --project-id <ID> --composition-id <CID> --media-type Video --resolution 1080p --access-level <level> --json` (omit `--access-level` only if the user has stated they want the Drive's configured default, otherwise pass `private` explicitly). Add `--callback-url <https url>` for headless completion notification.
+4. Run - `descript publish --project-id <ID> --composition-id <CID> --media-type Video --resolution 1080p --access-level <level> --json` (since v0.7.1 the CLI sends `private` when `--access-level` is omitted; pass the level explicitly anyway so the command shows what was confirmed. Only if the user has stated they want the Drive's configured default, replace `--access-level <level>` with `--drive-default-access`). Add `--callback-url <https url>` for headless completion notification.
 
 5. Report the `shareUrl` and `downloadUrl` from the result.
 
