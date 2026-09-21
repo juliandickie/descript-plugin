@@ -74,7 +74,7 @@ Free, read-only. Returns `availableModels` (id + cost tier low|medium|high) and 
 
 ### transcript (POST /export/transcript)
 
-Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
+Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs, on_speakers}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
 
 ### translate (composed workflow over POST /jobs/agent, not a standalone endpoint)
 

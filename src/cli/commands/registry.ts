@@ -14,7 +14,7 @@ import { parseNamingManifest, renderBatchNames, VIMEO_NAME_CAP, type NamingManif
 import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport, type ResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ImportRequest, EditInDescriptBody, ListJobsQuery, ListProjectsQuery, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail } from "../output.js";
@@ -59,14 +59,15 @@ function badEnum(ctx: Ctx, flag: string, allowed: readonly string[]): boolean {
   return true;
 }
 
-// Collects the four --timecodes-* flags into the API's timecodes object.
+// Collects the five --timecodes-* flags into the API's timecodes object.
 // Returns undefined when no flag was passed, null after emitting a usage error.
 function buildTimecodes(ctx: Ctx): TranscriptTimecodeOptions | undefined | null {
   const every = ctx.flags["timecodes-every"];
   const offset = ctx.flags["timecodes-offset"];
   const onParagraphs = ctx.flags["timecodes-on-paragraphs"] === true;
   const onMarkers = ctx.flags["timecodes-on-markers"] === true;
-  if (every === undefined && offset === undefined && !onParagraphs && !onMarkers) return undefined;
+  const onSpeakers = ctx.flags["timecodes-on-speakers"] === true;
+  if (every === undefined && offset === undefined && !onParagraphs && !onMarkers && !onSpeakers) return undefined;
   const t: TranscriptTimecodeOptions = {};
   if (every !== undefined) {
     const n = Number(every);
@@ -80,6 +81,7 @@ function buildTimecodes(ctx: Ctx): TranscriptTimecodeOptions | undefined | null 
   }
   if (onParagraphs) t.on_paragraphs = true;
   if (onMarkers) t.on_markers = true;
+  if (onSpeakers) t.on_speakers = true;
   return t;
 }
 
@@ -181,6 +183,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     };
     const r = await client(ctx).exportTranscript(req);
     if (out) {
+      mkdirSync(dirname(out), { recursive: true });
       writeFileSync(out, r.bytes);
       emit(ctx.io, `Wrote ${out} (${r.bytes.length} bytes, ${format})`, { ok: true, path: out, bytes: r.bytes.length, format });
       return 0;

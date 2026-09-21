@@ -231,6 +231,7 @@ export interface TranscriptTimecodeOptions {
   offset_seconds?: number;
   on_markers?: boolean;
   on_paragraphs?: boolean;
+  on_speakers?: boolean;
 }
 export interface TranscriptExportRequest {
   project_id: string;

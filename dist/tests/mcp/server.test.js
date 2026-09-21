@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { handleRpc, handleLine, TOOLS } from "../../src/mcp/server.js";
+import { handleRpc, handleLine, realExecutor, TOOLS } from "../../src/mcp/server.js";
+import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 test("lists a tool per CLI surface", () => {
     const names = TOOLS.map((t) => t.name);
     for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate"]) {
@@ -51,6 +52,44 @@ test("descript_transcript argv builder maps args to CLI flags", () => {
     const tool = TOOLS.find((t) => t.name === "descript_transcript");
     assert.deepEqual(tool.argv({ project_id: "p1", composition_id: "c1", format: "markdown", speaker_labels: "changes", markers: true }), ["transcript", "p1", "c1", "--format", "markdown", "--speaker-labels", "changes", "--markers", "--json"]);
     assert.deepEqual(tool.argv({ project_id: "p1", format: "docx", out: "/tmp/t.docx" }), ["transcript", "p1", "--format", "docx", "--out", "/tmp/t.docx", "--json"]);
+});
+test("descript_transcript maps a timecodes object onto the CLI timecode flags", () => {
+    const tool = TOOLS.find((t) => t.name === "descript_transcript");
+    assert.deepEqual(tool.argv({ project_id: "p1", composition_id: "c1", format: "markdown", timecodes: { on_paragraphs: true, on_speakers: true } }), ["transcript", "p1", "c1", "--format", "markdown", "--timecodes-on-paragraphs", "--timecodes-on-speakers", "--json"]);
+    assert.deepEqual(tool.argv({ project_id: "p1", format: "txt", timecodes: { frequency_seconds: 30, offset_seconds: -5, on_markers: true, on_paragraphs: false } }), ["transcript", "p1", "--format", "txt", "--timecodes-every", "30", "--timecodes-offset", "-5", "--timecodes-on-markers", "--json"]);
+});
+test("descript_transcript end to end - the timecodes argument reaches the API request body", async () => {
+    const { calls } = installMockFetch([{ status: 200, text: "[00:00:00] hi", headers: { "content-type": "text/markdown" } }]);
+    const prev = process.env.DESCRIPT_API_TOKEN;
+    process.env.DESCRIPT_API_TOKEN = "t";
+    try {
+        const r = await handleRpc({ jsonrpc: "2.0", id: 20, method: "tools/call", params: { name: "descript_transcript", arguments: {
+                    project_id: "p1", format: "markdown", timecodes: { frequency_seconds: 30, offset_seconds: -5, on_paragraphs: true, on_speakers: true }
+                } } }, realExecutor);
+        assert.equal(r.result.isError, false, r.result.content[0].text);
+        const body = JSON.parse(calls[0].body);
+        assert.deepEqual(body.timecodes, { frequency_seconds: 30, offset_seconds: -5, on_paragraphs: true, on_speakers: true });
+    }
+    finally {
+        if (prev === undefined)
+            delete process.env.DESCRIPT_API_TOKEN;
+        else
+            process.env.DESCRIPT_API_TOKEN = prev;
+        restoreFetch();
+    }
+});
+test("descript_transcript rejects a malformed timecodes argument instead of ignoring it", async () => {
+    const never = async () => { throw new Error("CLI must not run"); };
+    for (const bad of [true, "on_paragraphs", ["on_paragraphs"], { on_paragraph: true }, { on_paragraphs: "yes" }, { frequency_seconds: "30" }]) {
+        const r = await handleRpc({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "descript_transcript", arguments: { project_id: "p1", format: "txt", timecodes: bad } } }, never);
+        assert.equal(r.result.isError, true, `expected an error for ${JSON.stringify(bad)}`);
+        assert.match(r.result.content[0].text, /timecodes/);
+    }
+});
+test("descript_transcript rejects an unknown top-level argument instead of ignoring it", async () => {
+    const r = await handleRpc({ jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "descript_transcript", arguments: { project_id: "p1", format: "txt", timecode: { on_paragraphs: true } } } }, async () => { throw new Error("CLI must not run"); });
+    assert.equal(r.result.isError, true);
+    assert.match(r.result.content[0].text, /Unknown argument "timecode"/);
 });
 test("descript_models argv builder", () => {
     const tool = TOOLS.find((t) => t.name === "descript_models");

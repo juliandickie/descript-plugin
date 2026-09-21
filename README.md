@@ -28,6 +28,8 @@ Global flags: --json, --no-wait, --token, --profile.
 
 `descript export --names <file>` (v0.7.0) renders exported files under the iDD language filename standard from a naming manifest (lesson fields plus the composition-to-language map captured at translation time), validated batch-wide before any publish. See the descript-export skill for the manifest shape.
 
+`descript transcript <pid> [cid] --format markdown --timecodes-on-paragraphs --out <path>` exports a transcript for free, with no publish. Timecode flags are `--timecodes-every <sec>`, `--timecodes-offset <sec>`, `--timecodes-on-paragraphs`, `--timecodes-on-speakers` and `--timecodes-on-markers`; `--out` creates missing parent folders. The MCP tool `descript_transcript` takes the same options as a `timecodes` object, for example `{"on_paragraphs": true, "on_speakers": true}`, and rejects arguments it does not recognise instead of ignoring them.
+
 ## Skills
 
 descript-setup, descript-import, descript-edit, descript-transcript, descript-translate, descript-publish, descript-jobs, descript-export, descript-download-published, descript-batch, descript-api-reference. Edit, translate, publish, export, and batch are cost- or confirmation-gated; transcript is free and ungated.

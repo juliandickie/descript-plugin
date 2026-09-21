@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+MCP transcript timecodes, from the 2026-09-21 field note (`docs/field-reports/2026-09-21-mcp-transcript-timecodes-ignored-and-out-enoent.md`).
+
+- **Fixed - MCP `descript_transcript` silently ignored `timecodes`.** The tool now accepts `timecodes` as the API-shaped object (`on_paragraphs`, `on_speakers`, `on_markers` as booleans, `frequency_seconds`, `offset_seconds` as numbers) and maps it onto the CLI's `--timecodes-*` flags, so both surfaces share one code path. Previously the argument was accepted, dropped, and the export came back without `[HH:MM:SS]` marks.
+- **`descript_transcript` rejects what it does not understand** - an unknown top-level argument, a non-object `timecodes`, an unknown `timecodes` key, or a wrong value type returns `isError` with the allowed list before the CLI runs, instead of succeeding with quietly wrong output.
+- **`--timecodes-on-speakers`** - new CLI flag for the API's `on_speakers` option (timecodes at speaker changes), which no surface could request before.
+- **Fixed - `transcript --out` failed with ENOENT on a missing parent folder.** Missing parent folders are now created before the file is written.
+
 ## 0.7.0 - 2026-08-28
 
 Standard-compliant export filenames, implementing the iDD language filename standard locked 2026-08-28 (`[Course Acronym] - [CC] - [LL] - [CODE Simplified Language Name] - [Lesson Name].ext`).

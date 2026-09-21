@@ -17,6 +17,48 @@ const passthrough = (base: string[]) => (args: Record<string, unknown>): string[
   return out;
 };
 
+const TRANSCRIPT_ARGS = ["project_id", "composition_id", "format", "out", "speaker_labels", "markers", "timecodes"];
+const TIMECODE_BOOLEANS: Record<string, string> = {
+  on_paragraphs: "--timecodes-on-paragraphs",
+  on_speakers: "--timecodes-on-speakers",
+  on_markers: "--timecodes-on-markers"
+};
+const TIMECODE_NUMBERS: Record<string, string> = {
+  frequency_seconds: "--timecodes-every",
+  offset_seconds: "--timecodes-offset"
+};
+
+// A hand-built argv mapper only forwards the keys it names, so an argument it
+// does not know would be dropped without a trace. Throw instead; handleRpc
+// turns the throw into an isError result before the CLI runs.
+function rejectUnknownKeys(tool: string, args: Record<string, unknown>, allowed: string[]): void {
+  for (const k of Object.keys(args)) {
+    if (!allowed.includes(k)) throw new Error(`${tool}: Unknown argument "${k}". Allowed: ${allowed.join(", ")}`);
+  }
+}
+
+// Maps the API-shaped timecodes object onto the CLI's --timecodes-* flags so
+// the MCP tool and the CLI share one code path (buildTimecodes in registry.ts).
+function timecodeFlags(raw: unknown): string[] {
+  if (raw === undefined || raw === null) return [];
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("descript_transcript: timecodes must be an object, for example {\"on_paragraphs\": true}");
+  }
+  const out: string[] = [];
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (k in TIMECODE_BOOLEANS) {
+      if (typeof v !== "boolean") throw new Error(`descript_transcript: timecodes.${k} must be true or false`);
+      if (v) out.push(TIMECODE_BOOLEANS[k]!);
+    } else if (k in TIMECODE_NUMBERS) {
+      if (typeof v !== "number" || !Number.isFinite(v)) throw new Error(`descript_transcript: timecodes.${k} must be a number of seconds`);
+      out.push(TIMECODE_NUMBERS[k]!, String(v));
+    } else {
+      throw new Error(`descript_transcript: Unknown timecodes key "${k}". Allowed: ${[...Object.keys(TIMECODE_BOOLEANS), ...Object.keys(TIMECODE_NUMBERS)].join(", ")}`);
+    }
+  }
+  return out;
+}
+
 export const TOOLS: Tool[] = [
   { name: "descript_status", description: "Check Descript API auth and status", argv: passthrough(["status"]) },
   { name: "descript_import", description: "Import media and create a project (flags: url, file, name, no-wait)", argv: passthrough(["import"]) },
@@ -28,16 +70,20 @@ export const TOOLS: Tool[] = [
   { name: "descript_edit_in_descript", description: "Partner-gated import URL exchange (flag: schema path)", argv: passthrough(["edit-in-descript"]) },
   { name: "descript_batch", description: "Bulk runner. args: sub=plan|run, file; flag confirm", argv: (a) => ["batch", String(a.sub ?? "plan"), String(a.file ?? ""), ...(a.confirm ? ["--confirm"] : []), "--json"] },
   { name: "descript_models", description: "List available Underlord agent models and aliases (live catalog)", argv: passthrough(["models"]) },
-  { name: "descript_transcript", description: "Export a composition transcript, free and instant, no publish. args: project_id, composition_id?, format=txt|markdown|html|rtf|docx|srt, out? (file path; required for docx), speaker_labels?=off|changes|every_paragraph, markers?", argv: (a) => [
-      "transcript",
-      String(a.project_id ?? ""),
-      ...(a.composition_id ? [String(a.composition_id)] : []),
-      "--format", String(a.format ?? "txt"),
-      ...(a.speaker_labels ? ["--speaker-labels", String(a.speaker_labels)] : []),
-      ...(a.markers === true ? ["--markers"] : []),
-      ...(a.out ? ["--out", String(a.out)] : []),
-      "--json"
-    ] },
+  { name: "descript_transcript", description: "Export a composition transcript, free and instant, no publish. args: project_id, composition_id?, format=txt|markdown|html|rtf|docx|srt, out? (file path, missing parent folders are created; required for docx), speaker_labels?=off|changes|every_paragraph, markers?, timecodes? (object, any of on_paragraphs, on_speakers, on_markers as booleans, frequency_seconds, offset_seconds as numbers; adds [HH:MM:SS] marks). Unknown arguments are rejected, never ignored.", argv: (a) => {
+      rejectUnknownKeys("descript_transcript", a, TRANSCRIPT_ARGS);
+      return [
+        "transcript",
+        String(a.project_id ?? ""),
+        ...(a.composition_id ? [String(a.composition_id)] : []),
+        "--format", String(a.format ?? "txt"),
+        ...(a.speaker_labels ? ["--speaker-labels", String(a.speaker_labels)] : []),
+        ...(a.markers === true ? ["--markers"] : []),
+        ...timecodeFlags(a.timecodes),
+        ...(a.out ? ["--out", String(a.out)] : []),
+        "--json"
+      ];
+    } },
   { name: "descript_translate", description: "Translate a composition's captions via Underlord and report which NEW composition carries the requested language (creation-time mapping). BILLABLE - spends AI credits (translate captions ~10 plus agent message credits); confirm with the user before calling. args: project_id, composition_id?, language (e.g. \"French (Canada)\" - regional variants supported), model?", argv: (a) => [
       "translate",
       String(a.project_id ?? ""),
@@ -95,7 +141,13 @@ export async function handleRpc(req: RpcRequest, exec: Executor): Promise<RpcRes
     if (!tool) {
       return { jsonrpc: "2.0", id: req.id, result: { isError: true, content: [{ type: "text", text: `Unknown tool ${name}` }] } };
     }
-    const r = await exec(tool.argv(args));
+    let argv: string[];
+    try {
+      argv = tool.argv(args);
+    } catch (e) {
+      return { jsonrpc: "2.0", id: req.id, result: { isError: true, content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }] } };
+    }
+    const r = await exec(argv);
     return { jsonrpc: "2.0", id: req.id, result: {
       isError: r.code !== 0,
       content: [{ type: "text", text: r.stdout || r.stderr }]

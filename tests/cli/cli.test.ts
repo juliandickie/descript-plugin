@@ -1186,6 +1186,28 @@ test("transcript timecode flags build the timecodes object", async () => {
   assert.deepEqual(body.timecodes, { frequency_seconds: 30, on_paragraphs: true });
 });
 
+test("transcript --timecodes-on-speakers and --timecodes-on-markers reach the API body", async () => {
+  const { calls } = installMockFetch([{ status: 200, text: "x", headers: { "content-type": "text/plain" } }]);
+  const c = capture();
+  const code = await runCli(["transcript", "p1", "--format", "txt", "--timecodes-on-speakers", "--timecodes-on-markers"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 0);
+  const body = JSON.parse(calls[0]!.body as string);
+  assert.deepEqual(body.timecodes, { on_markers: true, on_speakers: true });
+});
+
+test("transcript --out creates missing parent folders", async () => {
+  installMockFetch([{ status: 200, text: "# Transcript", headers: { "content-type": "text/markdown" } }]);
+  const dir = mkdtempSync(join(tmpdir(), "descript-transcript-mkdir-"));
+  const out = join(dir, "not", "there", "yet", "t.md");
+  const c = capture();
+  const code = await runCli(["transcript", "p1", "--format", "markdown", "--out", out],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: c.write, stderr: c.write });
+  assert.equal(code, 0);
+  assert.equal(readFileSync(out, "utf8"), "# Transcript");
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test("transcript rejects a valueless --timecodes-every without calling the API", async () => {
   // A valueless flag at the end of argv parses as boolean true (parseArgv),
   // and Number(true) is 1, which would otherwise slip past the positive-number

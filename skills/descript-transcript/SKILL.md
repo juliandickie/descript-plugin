@@ -15,7 +15,9 @@ description: Export a transcript from a Descript project composition as txt, mar
 - Omit the composition id to export the project's first composition.
 - Formats: txt, markdown, html, rtf, docx, srt. docx is binary and requires `--out <path>`; the other formats print to stdout unless `--out` is given.
 - Speaker labels default to `changes`; override with `--speaker-labels off|changes|every_paragraph`.
-- `--markers` includes markers. Timecodes: `--timecodes-every <sec>`, `--timecodes-offset <sec>`, `--timecodes-on-paragraphs`, `--timecodes-on-markers`.
+- `--markers` includes markers. Timecodes (adds `[HH:MM:SS]` marks): `--timecodes-every <sec>`, `--timecodes-offset <sec>`, `--timecodes-on-paragraphs`, `--timecodes-on-speakers`, `--timecodes-on-markers`.
+- `--out <path>` creates missing parent folders.
+- MCP tool `descript_transcript` takes the same options as a `timecodes` object, for example `{"on_paragraphs": true, "on_speakers": true}` (keys `on_paragraphs`, `on_speakers`, `on_markers`, `frequency_seconds`, `offset_seconds`). It rejects unknown arguments rather than ignoring them. Plugin versions up to 0.7.0 silently drop `timecodes` on the MCP tool - on those versions use the CLI flags, and always confirm the marks are present in the output.
 - Find project and composition ids with `descript projects list --json` and `descript projects get <id> --json`.
 
 ## Cost and Safety
