@@ -4,7 +4,7 @@
 
 ## Purpose
 
-A Claude Code plugin giving full programmatic access to the Descript API. The plugin ships a Node/TypeScript CLI (`descript`) covering all 11 documented API endpoints plus polling, the three-step signed-URL upload, a bulk pipeline runner, and an MP4 + SRT + Markdown export workflow. Around the CLI sit nine skills and an optional in-process MCP shim. The CLI is the single source of truth, every skill and the MCP shim are thin wrappers that shell out to it, no API logic is duplicated.
+A Claude Code plugin giving full programmatic access to the Descript API. The plugin ships a Node/TypeScript CLI (`descript`) covering 13 of the 14 documented API endpoints (all but `GET /search`, per the 2026-09-30 capability audit) plus polling, the three-step signed-URL upload, a bulk pipeline runner, and an MP4 + SRT + Markdown export workflow. Around the CLI sit nine skills and an optional in-process MCP shim. The CLI is the single source of truth, every skill and the MCP shim are thin wrappers that shell out to it, no API logic is duplicated.
 
 ## Key Files
 

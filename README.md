@@ -1,6 +1,6 @@
 # descript
 
-Full programmatic access to the Descript API for Claude Code. A Node/TypeScript CLI covering the full Descript API surface (refreshed 2026-08-27) plus polling, the three-step signed-URL upload, and a bulk pipeline runner, wrapped by skills and an optional MCP shim.
+Full programmatic access to the Descript API for Claude Code. A Node/TypeScript CLI covering 13 of the 14 documented Descript API endpoints (all but drive search; spec refreshed 2026-09-30) plus polling, the three-step signed-URL upload, and a bulk pipeline runner, wrapped by skills and an optional MCP shim.
 
 ## Install (standalone)
 
@@ -33,6 +33,8 @@ Global flags: --json, --no-wait, --token, --profile.
 `descript publish` sends `--access-level private` unless you pass a level (v0.7.1); `--drive-default-access` uses the drive's configured default instead. The same default applies to the MCP tool and to batch manifests.
 
 Unknown flags are usage errors (exit 2, nothing runs), so a typo never silently changes the result. The MCP tools follow the same rule: each accepts only the arguments its command reads, in snake_case or kebab-case, and rejects anything else before running. `descript_projects` and `descript_jobs` accept every list filter the CLI does.
+
+The 2026-09-30 capability audit (`docs/field-reports/2026-09-30-api-and-mcp-capability-audit.md`) lists what the API and Descript's own MCP connector can do that the plugin does not wrap yet, including drive search and timeline export.
 
 ## Skills
 

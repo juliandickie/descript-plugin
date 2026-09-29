@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Docs - API and MCP capability audit (2026-09-30).** `docs/descript-openapi.json` refreshed to spec version 1.2 (the 2026-08-27 copy moved to `docs/legacy/`). New field report `docs/field-reports/2026-09-30-api-and-mcp-capability-audit.md` covers the new `GET /search` endpoint, live but undocumented v1 routes (timeline export in six formats, drive media library import, `update_compositions`), stale CLI guards (`jobs --type`, `publish --access-level drive`), and a comparison with Descript's official MCP connector. The `descript-api-reference` skill carries the same findings. No CLI behaviour changed.
+
 ## 0.7.2 - 2026-09-29
 
 Local file uploads work again, through both `descript import --file` and the MCP `descript_import` tool with `file`.
