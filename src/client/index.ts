@@ -9,7 +9,7 @@ import { exportTranscript } from "./transcript.js";
 import { search } from "./search.js";
 import { exportTimeline } from "./timeline.js";
 import type {
-  ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody,
+  ImportRequest, DriveMediaImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody,
   TranscriptExportRequest, SearchQuery, TimelineExportRequest
 } from "./types.js";
 
@@ -19,6 +19,7 @@ export class DescriptClient {
     this.http = new HttpClient(opts);
   }
   importProjectMedia(req: ImportRequest) { return jobs.importProjectMedia(this.http, req); }
+  importDriveMedia(req: DriveMediaImportRequest) { return jobs.importDriveMedia(this.http, req); }
   agentEditJob(req: AgentRequest) { return jobs.agentEditJob(this.http, req); }
   publishJob(req: PublishRequest) { return jobs.publishJob(this.http, req); }
   listJobs(query?: ListJobsQuery) { return jobs.listJobs(this.http, query); }

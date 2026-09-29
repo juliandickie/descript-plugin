@@ -14,6 +14,7 @@ export class DescriptClient {
         this.http = new HttpClient(opts);
     }
     importProjectMedia(req) { return jobs.importProjectMedia(this.http, req); }
+    importDriveMedia(req) { return jobs.importDriveMedia(this.http, req); }
     agentEditJob(req) { return jobs.agentEditJob(this.http, req); }
     publishJob(req) { return jobs.publishJob(this.http, req); }
     listJobs(query) { return jobs.listJobs(this.http, query); }

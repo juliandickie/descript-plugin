@@ -1,7 +1,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { HttpClient } from "../../src/client/http.js";
-import { importProjectMedia, agentEditJob, publishJob, listJobs, getJob, cancelJob } from "../../src/client/jobs.js";
+import { importProjectMedia, importDriveMedia, agentEditJob, publishJob, listJobs, getJob, cancelJob } from "../../src/client/jobs.js";
 import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 afterEach(() => restoreFetch());
 const http = () => new HttpClient({ token: "t" });
@@ -82,4 +82,19 @@ test("listJobs serializes all six query fields together", async () => {
     assert.ok(url.includes("created_before="), `missing created_before in: ${url}`);
     assert.ok(url.includes("limit=10"), `missing limit in: ${url}`);
     assert.ok(url.includes("cursor=cur-x"), `missing cursor in: ${url}`);
+});
+test("importDriveMedia POSTs add_media and folder_id to /jobs/import/drive_media", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d" } }]);
+    const res = await importDriveMedia(http(), { add_media: { "a.mp4": { url: "https://x/a.mp4" } }, folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" });
+    assert.equal(res.job_id, "j");
+    assert.equal(res.drive_id, "d");
+    assert.equal(calls[0].url, "https://descriptapi.com/v1/jobs/import/drive_media");
+    assert.equal(calls[0].method, "POST");
+    assert.deepEqual(JSON.parse(calls[0].body), { add_media: { "a.mp4": { url: "https://x/a.mp4" } }, folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" });
+});
+test("importProjectMedia sends update_compositions untouched", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
+    const update = [{ composition_id: "b65d1", append_clips: [{ media: "a.mp4", mute: true }] }];
+    await importProjectMedia(http(), { project_id: "p", add_media: { "a.mp4": { url: "https://x/a.mp4" } }, update_compositions: update });
+    assert.deepEqual(JSON.parse(calls[0].body).update_compositions, update);
 });

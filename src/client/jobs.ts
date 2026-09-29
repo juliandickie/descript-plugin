@@ -1,11 +1,17 @@
 import type { HttpClient } from "./http.js";
 import type {
-  ImportRequest, AgentRequest, PublishRequest,
-  SubmitJobResponse, JobStatus, ListJobsResponse, ListJobsQuery
+  ImportRequest, DriveMediaImportRequest, AgentRequest, PublishRequest,
+  SubmitJobResponse, DriveImportSubmitResponse, JobStatus, ListJobsResponse, ListJobsQuery
 } from "./types.js";
 
 export function importProjectMedia(http: HttpClient, req: ImportRequest): Promise<SubmitJobResponse> {
   return http.request<SubmitJobResponse>("POST", "/jobs/import/project_media", { body: req });
+}
+
+// Imports into the Drive's shared media library instead of a project. Live but not in
+// the public spec (validated 2026-09-30).
+export function importDriveMedia(http: HttpClient, req: DriveMediaImportRequest): Promise<DriveImportSubmitResponse> {
+  return http.request<DriveImportSubmitResponse>("POST", "/jobs/import/drive_media", { body: req });
 }
 
 export function agentEditJob(http: HttpClient, req: AgentRequest): Promise<SubmitJobResponse> {

@@ -50,3 +50,19 @@ test("new v0.5.0 shapes compile", () => {
     assert.equal(agentOk.resolved_model, "claude-haiku-4.5");
     assert.equal(importReq.workspace_name, "General");
 });
+test("update_compositions and drive media import shapes compile", () => {
+    const appendReq = {
+        project_id: "p",
+        add_media: { "a.mp4": { url: "https://x/a.mp4" } },
+        update_compositions: [{ composition_id: "b65d1", append_clips: [{ media: "a.mp4", mute: true }] }]
+    };
+    const driveReq = {
+        add_media: { "a.mp4": { url: "https://x/a.mp4", language: "en" }, "b.mp4": { content_type: "video/mp4", file_size: 10 } },
+        folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        callback_url: "https://hook.example/cb"
+    };
+    const job = { job_id: "j", job_type: "import/drive_media", job_state: "stopped", created_at: "t", drive_id: "d", result: { status: "success" } };
+    assert.equal(appendReq.update_compositions[0].append_clips.length, 1);
+    assert.equal(Object.keys(driveReq.add_media).length, 2);
+    assert.equal(job.job_type, "import/drive_media");
+});

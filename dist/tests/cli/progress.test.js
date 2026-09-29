@@ -129,6 +129,42 @@ test("import writes progress labels on every branch that polls", async () => {
         rmSync(dir, { recursive: true, force: true });
     }
 });
+test("import into an existing project by file, and into the drive media library, write progress labels", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-progress-lib-"));
+    const file = join(dir, "clip.mp4");
+    writeFileSync(file, Buffer.alloc(64, 1));
+    const uploadUrls = { "clip.mp4": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } };
+    const projectUpload = { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u", upload_urls: uploadUrls } };
+    const driveSubmit = { status: 201, json: { job_id: "j", drive_id: "d" } };
+    const driveUpload = { status: 201, json: { job_id: "j", drive_id: "d", upload_urls: uploadUrls } };
+    const driveRunning = (label) => ({ status: 200, json: { job_id: "j", job_type: "import/drive_media", job_state: "running", created_at: "t", drive_id: "d", progress: { label, last_update_at: "t" } } });
+    const driveDone = { status: 200, json: { job_id: "j", job_type: "import/drive_media", job_state: "stopped", created_at: "t", drive_id: "d", result: { status: "success" } } };
+    const drivePolls = () => [driveRunning("Importing media"), driveRunning("Importing media"), driveRunning("Transcribing"), driveDone];
+    const cases = [
+        { name: "--project-id --file", argv: ["import", "--project-id", "p", "--file", file], sequence: [projectUpload, { status: 200, text: "" }, ...importPolls()] },
+        { name: "--project-id --composition-id --url", argv: ["import", "--project-id", "p", "--composition-id", "b65d1", "--url", "https://x.test/a.mp4"], sequence: [submit, ...importPolls()] },
+        { name: "--library --url", argv: ["import", "--library", "--url", "https://x.test/a.mp4"], sequence: [driveSubmit, ...drivePolls()] },
+        { name: "--library --file", argv: ["import", "--library", "--file", file], sequence: [driveUpload, { status: 200, text: "" }, ...drivePolls()] },
+        { name: "--library --media", argv: ["import", "--library", "--media", JSON.stringify({ "a.mp4": { url: "https://x.test/a.mp4" } })], sequence: [driveSubmit, ...drivePolls()] }
+    ];
+    try {
+        for (const c of cases) {
+            installMockFetch(c.sequence);
+            const r = await run(c.argv);
+            assert.equal(r.code, 0, `${c.name}: ${r.err}`);
+            assert.equal(r.err, "  progress - Importing media\n  progress - Transcribing\n", c.name);
+            restoreFetch();
+            installMockFetch(c.sequence);
+            const j = await run([...c.argv, "--json"]);
+            assert.equal(j.code, 0, `${c.name} --json: ${j.err}`);
+            assert.equal(j.err, "", `${c.name} --json`);
+            restoreFetch();
+        }
+    }
+    finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
 test("translate writes the agent job's progress labels to stderr", async () => {
     const project = (extra) => ({ status: 200, json: { id: "p1", name: "P", drive_id: "d", created_at: "a", updated_at: "b", media_files: {},
             compositions: [{ id: "orig", name: "Video", media_type: "video" }, ...extra] } });

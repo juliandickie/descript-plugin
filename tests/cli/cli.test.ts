@@ -570,7 +570,9 @@ test("import --project-id adds media to existing project without project_name or
   assert.equal(body.project_id, "existing-p");
   assert.equal(body.project_name, undefined);
   assert.equal(body.add_compositions, undefined);
-  assert.ok(body.add_media["media.0"].url);
+  // An existing-project URL import names the media after the URL's file, so a second import cannot collide.
+  assert.equal(body.add_media["a.mp4"].url, "https://x/a.mp4");
+  assert.equal(body.add_media["media.0"], undefined);
 });
 
 test("import --project-id without --url or --media exits 2 without calling the API", async () => {

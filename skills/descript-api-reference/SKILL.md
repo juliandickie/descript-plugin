@@ -20,7 +20,7 @@ descript status, config, import, agent, models, transcript, timeline, translate,
 
 Async, returns `job_id`. URL imports, direct upload (three-step flow handled automatically by `--file`), and full multitrack/`add_media`/`add_compositions` shapes via raw JSON.
 
-- Dedicated CLI flags - `--folder <path>` (project folder placement), `--language <code>` (ISO 639-1 per media item), `--project-id <id>` (import into an existing project, no `add_compositions`). The raw `--media` JSON path remains for arbitrary shapes including multitrack sequences.
+- Dedicated CLI flags - `--folder <path>` (project folder placement), `--language <code>` (ISO 639-1 per media item), `--project-id <id>` (import into an existing project with `--url`, `--file` or `--media`, no `add_compositions`), `--composition-id <cid>` and `--update-compositions <json>` (append to an existing composition, below), `--library` and `--folder-id <uuid>` (drive media library import, next section). The raw `--media` JSON path remains for arbitrary shapes including multitrack sequences.
 
 - See `docs/help-docs/Descript API.md` sections "Import media into a new project" and "Direct file upload" for the full request schema and the three-step upload walkthrough.
 
@@ -28,7 +28,21 @@ Async, returns `job_id`. URL imports, direct upload (three-step flow handled aut
 
 - Clips in `add_compositions` take `mute` (spec 1.2) - for a sequence clip it mutes the sequence's own tracks, for any other clip it mutes the composition's script layer. Multitrack `tracks[]` entries also accept `mute` (live-validated, undocumented). Both pass through the raw `--media` / `--compositions` JSON for new projects.
 
-- `update_compositions: [{ composition_id, append_clips: [{ media, mute? }] }]` appends clips to an EXISTING composition (live-validated 2026-09-30, undocumented, requires `project_id`). Not reachable from the CLI yet - `--project-id` drops compositions. `add_compositions[].fps` is rejected by v1 even though Descript's MCP connector advertises it.
+- `update_compositions: [{ composition_id, append_clips: [{ media, mute? }] }]` appends clips to the end of an EXISTING composition (live-validated 2026-09-30, undocumented). It requires `project_id` (the API answers 400 "missing required peer project_id" otherwise) and at least one clip; `composition_id` takes a UUID, a 5-character short id or a full project URL; each `media` names a key of the same request's `add_media` (whether it can name media already in the project is untested). `add_compositions[].fps` is rejected by v1 even though Descript's MCP connector advertises it.
+
+- CLI append (v0.8.0) - `descript import --project-id <id> --composition-id <cid> (--url <u> | --file <path>)` sends `update_compositions: [{ composition_id, append_clips: [{ media: <the item's reference> }] }]` for the single imported item, and `--project-id <id> --media <json> --update-compositions <json>` sends the raw array as given. `--project-id --file` is allowed (it uploads through the same three-step flow, `--language` applies). Usage errors, all exit 2 with no request - `--composition-id` or `--update-compositions` without `--project-id`, both together, `--composition-id` with `--media`, `--update-compositions` with `--url` or `--file`, invalid JSON or a non-array for `--update-compositions`, and more than one of `--url`, `--file`, `--media` with `--project-id`. The human line names the composition, `Imported into <project url> and appended to composition <cid>`; `--json` is the normalised import result as for any import.
+
+- Media references - the `add_media` key is the file's name in Descript. `--file` uses `mediaRefForFile` (the basename, characters outside `A-Za-z0-9._-` replaced by `-`). `--url` into an existing project or the library uses `mediaRefForUrl` (the last URL path segment, percent-decoded, query and fragment ignored, same replacement; `media.0` when it has no 1 to 5 character extension, ends in a slash or does not parse), so a second URL import into one project no longer collides. A new-project `--url` import keeps `media.0`.
+
+### import into the drive media library (POST /jobs/import/drive_media, live but not in the public spec)
+
+Live-validated 2026-09-30 (validation messages), not exercised against real files by the audit because it writes to the shared library. Imports into the Drive's shared media library instead of a project. Body - `add_media` (required; each entry takes `url`, or `content_type` plus `file_size` for a direct upload, each with optional `language`; sequences (`tracks`) are rejected), `folder_id` (optional UUID of a media library folder; the only public source of these ids is `GET /search?type=media_library_folder`), `callback_url`. Direct uploads return `upload_urls` exactly like the project import. Job type `import/drive_media`, and the spec's `JobStatus` discriminator has no entry for it. The job result shape has never been observed, so the plugin treats it defensively - success is `result.status === "success"` (and no `media_status` entry with status `failed`), and whatever `media_status` and error fields exist are reported. The submit response carries `job_id` and `drive_id`, and the plugin does not assume project fields.
+
+- CLI (v0.8.0) - `descript import --library (--url <u> | --file <path> | --media <json>) [--folder-id <uuid>] [--language <code>] [--content-type <mime>] [--callback-url <u>] [--no-wait]`. `--file` uses `mediaRefForFile`, `--url` uses `mediaRefForUrl`, `--media` keys are sent as given. `directUpload` takes an optional submit function, so the file upload flow serves both endpoints. Usage errors, all exit 2 with no request - `--library` with `--name`, `--project-id`, `--workspace`, `--team-access`, `--folder`, `--compositions`, `--composition-id` or `--update-compositions`; `--folder-id` without `--library` or a non-UUID `--folder-id`; a `--media` entry with `tracks`; none or more than one of `--url`, `--file`, `--media`; `--library` given a value.
+
+- Output - `Imported <n> file(s) into the drive media library` (plus `(folder <id>)`), or `Library import failed: <error>` and exit 4. `--json` prints `{ ok, jobId, driveId, status, mediaStatus?, mediaSecondsUsed?, error?, result }` with the raw job result under `result`. `--no-wait` prints the submit response.
+
+- Gate - a library import writes to a shared space every Drive member can see and spends media minutes (no AI credits), so the `descript-import` skill carries a confirmation step for `--library`. MCP tool - `descript_import` with `library`, `folder_id`, `composition_id` and `update_compositions`.
 
 ### agent (POST /jobs/agent)
 
@@ -84,7 +98,7 @@ Free, read-only, synchronous, no job and no share URL. Searches the token's Driv
 
 - Results - project and layout_pack carry `project_id`, `name`, `url`, `owner?`, `updated_at`. Media (video, image, audio) carry `asset_id`, `name`, `location` (`media_library`, `project` or `brand_studio`), `project_id` (only for `project`) or `brand_studio_id` (only for `brand_studio`), `url`, `updated_at`, and `thumbnail_url` (signed, time-limited) and `duration` (seconds) when they exist. project_folder carries `folder_id`; media_library_folder carries `folder_id` and `location`. There is no match snippet, a content hit is the containing project.
 
-- Folder results are the only public source of `folder_id`. `project_folder` gives names, ids and URLs but no hierarchy. The `folder_id` of a `media_library_folder` result is what a drive media library import takes (see "API surface the CLI does not wrap yet").
+- Folder results are the only public source of `folder_id`. `project_folder` gives names, ids and URLs but no hierarchy. The `folder_id` of a `media_library_folder` result is what a drive media library import takes (`descript import --library --folder-id`, see the import section).
 
 - A 404 means the search endpoint is not enabled for the token's user; the CLI reports it as such rather than as a missing job or project.
 
@@ -128,15 +142,15 @@ Returns metadata, signed `download_url`, and WebVTT `subtitles` for a published 
 
 Partner-gated import URL exchange. Requires Descript onboarding to enable. Not user-reachable without the partner integration.
 
-### API surface the CLI does not wrap yet
-
-Verified 2026-09-30; see the capability audit for request shapes and evidence.
-
-- **drive media library import (POST /jobs/import/drive_media, live but undocumented)** - imports into the shared media library instead of a project; `add_media` entries take `url` or `content_type` plus `file_size`, optional `folder_id`. Validated only; not exercised, because it writes to the shared library.
-
 ### Descript's official MCP connector
 
-Descript hosts its own MCP server (`https://api.descript.com/v2/mcp`, OAuth, one Drive per connection). The Claude directory connector exposes import (including `update_compositions` and drive media import), agent edits, publish, transcript export (no DOCX), timeline export, jobs with progress labels, projects, folder listing, drive info and upload-failure reporting. It has no search, published-download, batch or naming-standard workflow. Generative image and video tools exist only when the server is added by URL, not through the directory connector. Folder listing and upload-failure reporting have no public v1 route; everything else maps onto v1 endpoints.
+Descript hosts its own MCP server (`https://api.descript.com/v2/mcp`, OAuth, one Drive per connection). The Claude directory connector exposes import (including `update_compositions` and drive media import), agent edits, publish, transcript export (no DOCX), timeline export, jobs with progress labels, projects, folder listing, drive info and upload-failure reporting. It has no search, published-download, batch or naming-standard workflow. Generative image and video tools exist only when the server is added by URL, not through the directory connector.
+
+As of v0.8.0 the plugin wraps every connector capability that has a public v1 route, so the only connector-only features left are these (verified 2026-09-30, see the capability audit):
+
+- Folder tree listing (`list_folders`) - no v1 route. `descript search --type project_folder` and `--type media_library_folder` give folder names, ids and URLs, but no hierarchy.
+- Upload-failure reporting (`report_upload_status`, marks a direct upload as failed, aborted or abandoned so the job stops waiting) - no v1 route. The plugin uploads one file per job and fails the command when the PUT fails, so it matters mainly for multi-file uploads.
+- Generative image and video - only on the custom server URL.
 
 ## Rate limiting
 
@@ -164,6 +178,8 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 
 - `export` (skill - `descript-export`) - triggers one publish per composition. Same risk profile as `publish`, multiplied. Model-invocable with in-skill confirmation; defaults access-level to `private`. Publishes serialize per project (Descript allows one publish job per project at a time); the CLI chains same-project items automatically and waits out already-running locks rather than failing the item. Colliding composition titles (regional translation variants share an identical title) get a " [slug]" folder suffix - read `outputDir` per item from the report rather than assuming title-named folders. `--names <file>` (v0.7.0) renders standard-compliant flat filenames from a manifest of lesson fields plus a composition-to-language map (iDD language filename standard); pre-flight validates the whole batch before any publish and the report records `renderedName` per item.
 
+- `import --library` (skill - `descript-import`) - writes to the Drive's shared media library, visible to every Drive member, and spends media minutes (no AI credits). Model-invocable with an in-skill confirmation step (say where the files go, that it spends media minutes, confirm the destination and folder first). Every other `import` shape is unrestricted.
+
 - `download-published` (skill - `descript-download-published`) - read-only, free, unrestricted.
 
 - `transcript` (skill - `descript-transcript`) - free, read-only, no artifacts. Unrestricted.
@@ -174,7 +190,7 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 
 - `models` (no dedicated skill; documented here) - free, read-only. Unrestricted.
 
-- Everything else (`status`, `config`, `import`, `jobs list/get/cancel`, `projects list/get`, `published`, `edit-in-descript`) is read-only or non-billable, unrestricted.
+- Everything else (`status`, `config`, `import` without `--library`, `jobs list/get/cancel`, `projects list/get`, `published`, `edit-in-descript`) is read-only or non-billable, unrestricted.
 
 Contributor rule of thumb - operator-gate any skill whose blast radius extends beyond a single composition, or that can spend AI credits transitively via `agent_prompt` items.
 
