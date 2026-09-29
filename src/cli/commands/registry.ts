@@ -1,5 +1,5 @@
 import { DescriptClient } from "../../client/index.js";
-import { DescriptApiError } from "../../client/errors.js";
+import { DescriptApiError, errorDetailMessages } from "../../client/errors.js";
 import { resolveCredentials } from "../../config/credentials.js";
 import { importAndWait, normalizeImportJob } from "../../workflows/importAndWait.js";
 import { editAndWait } from "../../workflows/editAndWait.js";
@@ -15,12 +15,14 @@ import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport, type ResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AccessLevel, ImportRequest, EditInDescriptBody, JobType, ListJobsQuery, ListProjectsQuery, SearchMatch, SearchQuery, SearchSort, SearchType, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
+import type { AccessLevel, ImportRequest, EditInDescriptBody, JobType, ListJobsQuery, ListProjectsQuery, SearchMatch, SearchQuery, SearchSort, SearchType, TimelineExportRequest, TimelineFormat, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail, progressReporter } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
 import { formatSearch } from "./search.js";
+import { TIMELINE_FORMAT_IDS, TIMELINE_USAGE, SOURCE_FRAME_RATE_FORMATS, timelineFormatLines, formatTimelineOutcome, timelineOutcomeJson } from "./timeline.js";
+import { saveTimelineExport } from "../../workflows/timelineExport.js";
 
 export interface Ctx {
   args: string[];
@@ -242,6 +244,7 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
   projects: ["name", "folder-path", "created-by", "created-after", "created-before", "updated-after", "updated-before", "sort", "direction", "limit", "cursor"],
   search: ["type", "match", "owner", "updated-after", "updated-before", "sort", "limit"],
+  timeline: ["format", "out", "markers", "no-markers", "track-per-file", "source-frame-rate", "strip-spaces", "callback-url", "no-wait"],
   published: [],
   "download-published": ["formats", "concurrency", "output-dir", "no-end-marker", "slugs", "report"],
   "edit-in-descript": ["schema"],
@@ -632,6 +635,93 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     return 0;
   },
 
+  async timeline(ctx) {
+    // A switch takes no value. parseArgv would read `--markers <word>` as a value and
+    // swallow the word (a project id, say), so refuse it instead of dropping an option.
+    const switches: Record<string, string | boolean | undefined> = {
+      "markers": ctx.flags["markers"],
+      "no-markers": ctx.flags["no-markers"],
+      "track-per-file": ctx.flags["track-per-file"],
+      "source-frame-rate": ctx.flags["source-frame-rate"],
+      "strip-spaces": ctx.flags["strip-spaces"],
+      "no-wait": ctx.flags["no-wait"]
+    };
+    for (const [name, v] of Object.entries(switches)) {
+      if (v !== undefined && v !== true) {
+        fail(ctx.io, `--${name} is a switch and takes no value (got "${String(v)}"). Put switches after the project id, or drop the extra word.\n${TIMELINE_USAGE}`);
+        return 2;
+      }
+    }
+    const out = ctx.flags["out"];
+    if (out !== undefined && (typeof out !== "string" || out.trim() === "")) {
+      fail(ctx.io, "--out needs a file path, or a folder to save into");
+      return 2;
+    }
+    const callbackUrl = ctx.flags["callback-url"];
+    if (callbackUrl !== undefined && (typeof callbackUrl !== "string" || callbackUrl.trim() === "")) {
+      fail(ctx.io, "--callback-url needs a URL");
+      return 2;
+    }
+    const projectId = ctx.args[0];
+    if (!projectId) {
+      fail(ctx.io, TIMELINE_USAGE);
+      return 2;
+    }
+    if (ctx.args.length > 2) {
+      fail(ctx.io, `Unexpected extra argument${ctx.args.length > 3 ? "s" : ""}: ${ctx.args.slice(2).join(" ")}. Put flags after the project id and composition id.\n${TIMELINE_USAGE}`);
+      return 2;
+    }
+    const format = ctx.flags["format"];
+    if (typeof format !== "string") {
+      fail(ctx.io, `--format is required. Choose one:\n${timelineFormatLines()}`);
+      return 2;
+    }
+    if (!TIMELINE_FORMAT_IDS.includes(format)) {
+      fail(ctx.io, `--format must be one of (got "${format}"):\n${timelineFormatLines()}`);
+      return 2;
+    }
+    if (switches["markers"] === true && switches["no-markers"] === true) {
+      fail(ctx.io, "--markers and --no-markers cannot be used together. Pick one, or leave both out to get the format's default.");
+      return 2;
+    }
+    if (switches["track-per-file"] === true && format === "fcp") {
+      fail(ctx.io, "--track-per-file is not supported for fcp (the API rejects it). Use it with edl, sesx, premiere, davinci_resolve or aaf.");
+      return 2;
+    }
+    if (switches["source-frame-rate"] === true && !SOURCE_FRAME_RATE_FORMATS.includes(format)) {
+      fail(ctx.io, `--source-frame-rate only applies to ${SOURCE_FRAME_RATE_FORMATS.join(" and ")} (got ${format}); the other formats always snap frame rates.`);
+      return 2;
+    }
+    if (switches["strip-spaces"] === true && format !== "aaf") {
+      fail(ctx.io, `--strip-spaces only applies to aaf, which strips spaces from names for Logic (got ${format}).`);
+      return 2;
+    }
+    // Only what the user set goes to the API, which rejects unknown fields.
+    const req: TimelineExportRequest = {
+      project_id: projectId,
+      ...(ctx.args[1] ? { composition_id: ctx.args[1] } : {}),
+      format: format as TimelineFormat,
+      ...(switches["markers"] === true ? { include_markers: true } : {}),
+      ...(switches["no-markers"] === true ? { include_markers: false } : {}),
+      ...(switches["track-per-file"] === true ? { create_track_per_file: true } : {}),
+      ...(switches["source-frame-rate"] === true ? { snap_frame_rates: false } : {}),
+      ...(switches["strip-spaces"] === true ? { strip_spaces: true } : {}),
+      ...(typeof callbackUrl === "string" ? { callback_url: callbackUrl } : {})
+    };
+    const c = client(ctx);
+    const submit = await c.exportTimeline(req);
+    if (noWait(ctx)) {
+      emit(ctx.io, `Submitted timeline export ${submit.job_id} (${submit.format ?? format}, project ${submit.project_id}). Check it with: descript jobs get ${submit.job_id} --json`, submit);
+      return 0;
+    }
+    const outcome = await saveTimelineExport(c, { ...submit, format: submit.format ?? (format as TimelineFormat) }, {
+      ...(typeof out === "string" ? { out } : {}),
+      poll: pollOptions(ctx)
+    });
+    emit(ctx.io, formatTimelineOutcome(outcome), timelineOutcomeJson(outcome));
+    return outcome.ok ? 0 : 4;
+  },
+
   async published(ctx) {
     const c = client(ctx);
     const slug = ctx.args[1] ?? ctx.args[0];
@@ -936,7 +1026,11 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
 
 export function mapError(io: IO, e: unknown): number {
   if (e instanceof DescriptApiError) {
-    fail(io, `${e.message}\nHint: ${e.hint}`, e.body);
+    // A 400's top-level message only says the payload was invalid; what to fix is in
+    // body.details. Human mode lists each detail before the hint. --json keeps its
+    // error string as it was, because the whole body already rides along as detail.
+    const details = io.json ? [] : errorDetailMessages(e.body).map((m) => `  - ${m}`);
+    fail(io, [e.message, ...details, `Hint: ${e.hint}`].join("\n"), e.body);
     return 3;
   }
   fail(io, e instanceof Error ? e.message : String(e));

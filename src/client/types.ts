@@ -1,9 +1,9 @@
 export type JobState = "queued" | "running" | "stopped" | "cancelled";
 /**
  * Every job type GET /jobs accepts as its `type` filter (live-verified 2026-09-30).
- * JobStatus below models only the three types this plugin submits and polls; a
- * `jobs list --type import/drive_media` or `export/timeline` response still comes
- * back as JSON, it just is not narrowed by the union.
+ * JobStatus below models the four types this plugin submits and polls (import,
+ * agent, publish, export/timeline); a `jobs list --type import/drive_media`
+ * response still comes back as JSON, it just is not narrowed by the union.
  */
 export type JobType = "import/project_media" | "import/drive_media" | "agent" | "publish" | "export/timeline";
 
@@ -17,6 +17,8 @@ export type AccessLevel = "public" | "unlisted" | "drive" | "private";
 export interface ApiErrorBody {
   error: string;
   message: string;
+  /** Validation failures (400) list what was wrong, for example { message: "\"folder_id\" must be a valid GUID", path: ["folder_id"] }. */
+  details?: Array<{ message?: string; path?: Array<string | number> }>;
 }
 
 export interface UrlImportItem {
@@ -128,6 +130,24 @@ export interface PublishErrorResult {
   error_message: string;
 }
 
+/**
+ * POST /jobs/export/timeline (live-verified 2026-09-29/30, not yet in the public spec).
+ * A stopped, successful job carries a signed storage `download_url` valid for 24 hours.
+ */
+export interface TimelineExportSuccessResult {
+  status: "success";
+  composition_id: string;
+  file_name: string;
+  content_type: string;
+  download_url: string;
+  download_url_expires_at: string;
+}
+export interface TimelineExportErrorResult {
+  status: "error";
+  error_message: string;
+  error_code?: string;
+}
+
 export interface JobProgress {
   label: string;
   percent?: number;
@@ -158,7 +178,11 @@ export interface PublishJobStatus extends JobStatusBase {
   job_type: "publish";
   result?: PublishSuccessResult | PublishErrorResult;
 }
-export type JobStatus = ImportJobStatus | AgentJobStatus | PublishJobStatus;
+export interface TimelineExportJobStatus extends JobStatusBase {
+  job_type: "export/timeline";
+  result?: TimelineExportSuccessResult | TimelineExportErrorResult;
+}
+export type JobStatus = ImportJobStatus | AgentJobStatus | PublishJobStatus | TimelineExportJobStatus;
 
 export interface Pagination {
   next_cursor?: string;
@@ -332,6 +356,36 @@ export interface TranscriptExportRequest {
   include_markers?: boolean;
   timecodes?: TranscriptTimecodeOptions;
 }
+/**
+ * Timeline file formats, by the app that opens them: edl (Samplitude EDL, for Reaper and
+ * Samplitude), sesx (Adobe Audition), fcp (Final Cut Pro X, FCPXML 1.8), premiere (Premiere Pro
+ * XML), davinci_resolve (DaVinci Resolve XML), aaf (Pro Tools and Logic, binary).
+ */
+export type TimelineFormat = "edl" | "sesx" | "fcp" | "premiere" | "davinci_resolve" | "aaf";
+export interface TimelineExportRequest {
+  project_id: string;
+  format: TimelineFormat;
+  /** A UUID, 5-character short id or full project URL. Defaults to the first composition. */
+  composition_id?: string;
+  /** The API default depends on the format. */
+  include_markers?: boolean;
+  /** The API rejects this for fcp. */
+  create_track_per_file?: boolean;
+  /** Default true. The API accepts false only for premiere and davinci_resolve. */
+  snap_frame_rates?: boolean;
+  /** aaf only. */
+  strip_spaces?: boolean;
+  callback_url?: string;
+}
+export interface TimelineExportSubmitResponse {
+  job_id: string;
+  drive_id: string;
+  drive_name: string;
+  project_id: string;
+  project_url: string;
+  format: TimelineFormat;
+}
+
 // GET /status stabilized in the 2026-08-27 spec refresh - documented contract is
 // { drive_id, drive_name, api_version } (all required server-side). Fields stay
 // optional here so an older or degraded payload never throws; any 2xx still

@@ -7,6 +7,7 @@ import { postEditInDescriptSchema } from "./editInDescript.js";
 import { listAgentModels } from "./models.js";
 import { exportTranscript } from "./transcript.js";
 import { search } from "./search.js";
+import { exportTimeline } from "./timeline.js";
 export class DescriptClient {
     http;
     constructor(opts) {
@@ -26,7 +27,9 @@ export class DescriptClient {
     listAgentModels() { return listAgentModels(this.http); }
     exportTranscript(req) { return exportTranscript(this.http, req); }
     search(query) { return search(this.http, query); }
+    exportTimeline(req) { return exportTimeline(this.http, req); }
 }
 export { HttpClient } from "./http.js";
 export { DescriptApiError } from "./errors.js";
+export { downloadTimelineFile, TimelineDownloadError } from "./timeline.js";
 export * from "./types.js";

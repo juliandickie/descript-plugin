@@ -17,7 +17,7 @@ export function installMockFetch(sequence) {
         const respHeaders = new Headers(spec.headers ?? {});
         const bodyText = spec.json !== undefined ? JSON.stringify(spec.json) : (spec.text ?? "");
         const nullBodyStatuses = new Set([101, 204, 205, 304]);
-        const responseBody = nullBodyStatuses.has(spec.status) ? null : bodyText;
+        const responseBody = nullBodyStatuses.has(spec.status) ? null : (spec.bytes ? new Uint8Array(spec.bytes).buffer : bodyText);
         return new Response(responseBody, { status: spec.status, headers: respHeaders });
     });
     return { calls };
@@ -51,7 +51,7 @@ export function installMockFetchByUrl(rules) {
         const respHeaders = new Headers(spec.headers ?? {});
         const bodyText = spec.json !== undefined ? JSON.stringify(spec.json) : (spec.text ?? "");
         const nullBodyStatuses = new Set([101, 204, 205, 304]);
-        const responseBody = nullBodyStatuses.has(spec.status) ? null : bodyText;
+        const responseBody = nullBodyStatuses.has(spec.status) ? null : (spec.bytes ? new Uint8Array(spec.bytes).buffer : bodyText);
         return new Response(responseBody, { status: spec.status, headers: respHeaders });
     });
     return { calls };

@@ -22,7 +22,7 @@ Or set DESCRIPT_API_TOKEN, or the plugin api_token config.
 
 ## CLI
 
-descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, search, published, download-published, export, edit-in-descript, batch
+descript status, config, import, agent, models, transcript, timeline, translate, publish, jobs, projects, search, published, download-published, export, edit-in-descript, batch
 
 Global flags: --json, --no-wait, --token, --profile.
 
@@ -30,17 +30,19 @@ Global flags: --json, --no-wait, --token, --profile.
 
 `descript transcript <pid> [cid] --format markdown --timecodes-on-paragraphs --out <path>` exports a transcript for free, with no publish. Timecode flags are `--timecodes-every <sec>`, `--timecodes-offset <sec>`, `--timecodes-on-paragraphs`, `--timecodes-on-speakers` and `--timecodes-on-markers`; `--out` creates missing parent folders. The MCP tool `descript_transcript` takes the same options as a `timecodes` object, for example `{"on_paragraphs": true, "on_speakers": true}`, and rejects arguments it does not recognise instead of ignoring them.
 
+`descript timeline <pid> [cid] --format premiere --out <path>` exports a composition as a timeline file for another editor and saves it, for free: no share page and no AI credits. `--format` is one of `edl` (Reaper, Samplitude), `sesx` (Adobe Audition), `fcp` (Final Cut Pro X), `premiere` (Premiere Pro), `davinci_resolve` (DaVinci Resolve) or `aaf` (Pro Tools, Logic). It submits the export job, waits, downloads the file from its signed storage link (valid 24 hours) and prints the saved path, size and that link; `--json` prints the same as one object. Without `--out` the file lands in the current folder as `<project_id>-<file name>`; `--out` may be a file path or an existing folder, and creates missing parent folders. Options are `--markers` or `--no-markers` (neither uses the format's default), `--track-per-file` (not fcp), `--source-frame-rate` (premiere and davinci_resolve only), `--strip-spaces` (aaf only), `--callback-url` and `--no-wait` (submit and stop). Media is not bundled, the editor relinks to your own files. The endpoint is live but not yet in Descript's published spec, so if it starts returning 404 the plugin needs updating. The MCP tool `descript_timeline` takes the same options, with `markers` as true, false or left out.
+
 `descript search <query words...> [--type project,audio] [--match name,content] [--owner <uuid,...>] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]` searches the Drive for free (read-only) across project, folder, layout pack and media names, composition text and transcripts, covering projects, the drive media library and Brand Studio. It prints one line per result (`type  name  id  url`, media lines add location and seconds) and a count; `--json` prints the raw response. `--type project_folder` and `--type media_library_folder` are the only public source of folder ids. List flags are comma-separated. The MCP tool `descript_search` takes the same options, with `type`, `match` and `owner` as an array or a comma-separated string.
 
 `descript publish` sends `--access-level private` unless you pass a level (`private`, `drive` for members of the Drive only, `unlisted` or `public`; v0.7.1); `--drive-default-access` uses the drive's configured default instead. The same default applies to the MCP tool and to batch manifests.
 
 Unknown flags are usage errors (exit 2, nothing runs), so a typo never silently changes the result. The MCP tools follow the same rule: each accepts only the arguments its command reads, in snake_case or kebab-case, and rejects anything else before running. `descript_projects` and `descript_jobs` accept every list filter the CLI does.
 
-The 2026-09-30 capability audit (`docs/field-reports/2026-09-30-api-and-mcp-capability-audit.md`) lists what the API and Descript's own MCP connector can do that the plugin does not wrap yet, including timeline export and drive media library import.
+The 2026-09-30 capability audit (`docs/field-reports/2026-09-30-api-and-mcp-capability-audit.md`) lists what the API and Descript's own MCP connector can do that the plugin does not wrap yet, including drive media library import.
 
 ## Skills
 
-descript-setup, descript-import, descript-edit, descript-transcript, descript-search, descript-translate, descript-publish, descript-jobs, descript-export, descript-download-published, descript-batch, descript-api-reference. Edit, translate, publish, export, and batch are cost- or confirmation-gated; transcript and search are free and ungated.
+descript-setup, descript-import, descript-edit, descript-transcript, descript-timeline, descript-search, descript-translate, descript-publish, descript-jobs, descript-export, descript-download-published, descript-batch, descript-api-reference. Edit, translate, publish, export, and batch are cost- or confirmation-gated; transcript, timeline and search are free and ungated.
 
 ## Tip - Per-cue density for chapter generation
 

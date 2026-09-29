@@ -23,6 +23,24 @@ const HINTS = {
     server_error: "Descript returned a server error. This is transient; retry idempotent reads with backoff.",
     http_error: "Unexpected HTTP error from the Descript API."
 };
+/**
+ * The `details[].message` strings of an API error body, in the order sent. A 400
+ * carries the useful part there (for example `"folder_id" must be a valid GUID`),
+ * while its top-level message only says the payload was invalid. Anything that is
+ * not a list of objects with a non-empty string message is skipped.
+ */
+export function errorDetailMessages(body) {
+    const details = body?.details;
+    if (!Array.isArray(details))
+        return [];
+    const out = [];
+    for (const d of details) {
+        const message = d?.message;
+        if (typeof message === "string" && message.trim() !== "")
+            out.push(message.trim());
+    }
+    return out;
+}
 export class DescriptApiError extends Error {
     status;
     category;
