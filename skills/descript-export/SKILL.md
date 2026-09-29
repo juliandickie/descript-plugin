@@ -20,7 +20,7 @@ End-to-end pipeline: publish a composition (or many), download the rendered medi
 
 2. Confirm deliverables. Default is mp4 + srt + md. If the user says "just the transcripts" or "no need for the video", ask explicitly: "Descript renders the MP4 server-side regardless because their API has no transcript-only publish path. Do you want me to also download the MP4 now (one extra download per composition), or skip it (it stays on Descript's CDN - `descript download-published <slug> --formats mp4` will fetch it later)?"
 
-3. Confirm access level. Default is private (export-and-download workflow). Only override if the user specifically needs unlisted or public.
+3. Confirm access level. Default is private (export-and-download workflow). Only override if the user asks for it in affirmative language - `drive` (visible only to members of the Drive), `unlisted` or `public`. Treat each of those as an elevation and state the level before submitting; in step 5 replace `private` with the confirmed level.
 
 4. Confirm output dir. Default is the current directory. Confirm if not specified.
 

@@ -94,7 +94,7 @@ async function processOne(client, item, opts) {
                 waitMs: ALREADY_RUNNING_WAIT_MS,
                 maxAttempts: ALREADY_RUNNING_MAX_ATTEMPTS
             };
-            const out = await publishAndWait(client, publishReq, {}, submitRetry);
+            const out = await publishAndWait(client, publishReq, opts.pollFor?.(item) ?? {}, submitRetry);
             if (!out.ok || !out.shareUrl) {
                 return {
                     ok: false, slug: "", title: "", outputDir: "",

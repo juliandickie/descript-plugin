@@ -17,7 +17,7 @@ Only the agent operation is billable on standard Descript plans (AI credits and 
 
 - `descript-batch` is operator-only via `disable-model-invocation: true`. Keep that flag. Batch's blast radius (bulk write across many compositions, possible AI-credit billing via `agent_prompt` items) is the categorical risk that justifies an operator gate. The CLI's `batch plan` then `batch run --confirm` dance is the load-bearing safety mechanism; the skill flag reinforces it.
 
-- `descript-publish` is model-invocable WITHOUT `disable-model-invocation`, gated by an in-skill confirmation step that defaults the access-level confirmation to `private`. Elevation to `unlisted` or `public` requires affirmative user language. Same confirmation pattern as `descript-edit` and `descript-export`.
+- `descript-publish` is model-invocable WITHOUT `disable-model-invocation`, gated by an in-skill confirmation step that defaults the access-level confirmation to `private`. Elevation to `drive`, `unlisted` or `public` requires affirmative user language. Same confirmation pattern as `descript-edit` and `descript-export`.
 
 - `descript-edit` wraps the cost-bearing agent command and is model-invocable WITHOUT `disable-model-invocation`, gated by the in-skill confirmation step so Claude can run edits conversationally. Do not add `disable-model-invocation` to `descript-edit`.
 

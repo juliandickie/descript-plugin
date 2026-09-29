@@ -52,7 +52,7 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 
 ### publish (POST /jobs/publish)
 
-Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `drive`, `private`; the API accepts `drive` as of 2026-09-30, but the CLI still rejects it at parse time). The API uses the drive's configured default when `access_level` is omitted, so since v0.7.1 the CLI, the MCP tool and batch manifests send `private` unless a level is given; `--drive-default-access` (MCP `drive_default_access`) is the explicit opt-out.
+Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `drive`, `private`; `drive` is visible only to members of the Drive, and the API returns 403 when the Drive's publish settings do not permit the requested level). The API uses the drive's configured default when `access_level` is omitted, so since v0.7.1 the CLI, the MCP tool and batch manifests send `private` unless a level is given; `--drive-default-access` (MCP `drive_default_access`) is the explicit opt-out.
 
 - **Republish keying** - the same `(project_id, composition_id, media_type)` reuses the prior share URL on every subsequent publish; bookmarks keep working. A Video publish and an Audio publish of the same composition produce two distinct share URLs.
 
@@ -62,11 +62,11 @@ Async, free on standard plans (creates a hosted share URL). Video or Audio, reso
 
 State is `queued`, `running`, `stopped`, `cancelled`. Completion is `job_state === "stopped"`, then `result.status` is `success`, `partial` (import only), or `error`.
 
-- The list endpoint's `type` filter accepts `import/project_media`, `import/drive_media`, `agent`, `publish` and `export/timeline` (live-verified 2026-09-30). The CLI's `--type` guard still allows only `import/project_media` and `agent`, a stale restriction. Lists cover the last 7 days unless `created_after` says otherwise.
+- The list endpoint's `type` filter accepts exactly `import/project_media`, `import/drive_media`, `agent`, `publish` and `export/timeline` (live-verified 2026-09-30), and the CLI's `--type` accepts the same five. Lists cover the last 7 days unless `created_after` says otherwise.
 
 - 30-day max lookback via `created_after` and `created_before`.
 
-- CLI filter flags - `--project-id`, `--type`, `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`. Enum violations fail fast at parse time (today that includes the valid `--type publish`). See `docs/help-docs/Descript API.md` under "List jobs" for the full parameter shape.
+- CLI filter flags - `--project-id`, `--type`, `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`. Enum violations fail fast at parse time. See `docs/help-docs/Descript API.md` under "List jobs" for the full parameter shape.
 
 ### projects (GET /projects, GET /projects/{id})
 
@@ -126,7 +126,7 @@ Descript hosts its own MCP server (`https://api.descript.com/v2/mcp`, OAuth, one
 
 ## Job completion
 
-A job is done when `job_state === "stopped"`. Then `result.status` is `success` (or `partial` for import) or `error`. The CLI's `AndWait` workflows handle polling automatically with backoff. Add `--no-wait` to opt out and use `--callback-url` for headless completion.
+A job is done when `job_state === "stopped"`. Then `result.status` is `success` (or `partial` for import) or `error`. The CLI's `AndWait` workflows handle polling automatically with backoff. Add `--no-wait` to opt out and use `--callback-url` for headless completion. While a job runs, its status carries `progress.label` (for example "Applying Studio Sound to clip 2..."); in human mode the CLI writes each new label to stderr as `  progress - <label>` (agent, translate, import, publish and export), and with `--json`, and so through the MCP tools, it prints none.
 
 ## Auth
 
@@ -140,7 +140,7 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 
 - `translate` (skill - `descript-translate`) - billable per call (agent endpoint). Model-invocable with in-skill confirmation. Always disclose cost and record the returned composition mapping.
 
-- `publish` (skill - `descript-publish`) - not billable on standard plans, but creates a hosted share URL. Model-invocable with in-skill confirmation that defaults access-level to `private`. Elevation to `unlisted` or `public` requires affirmative user language.
+- `publish` (skill - `descript-publish`) - not billable on standard plans, but creates a hosted share URL. Model-invocable with in-skill confirmation that defaults access-level to `private`. Elevation to `drive`, `unlisted` or `public` requires affirmative user language.
 
 - `batch` (skill - `descript-batch`) - conditionally billable (only when manifest items include `agent_prompt`). Always risk-bearing for bulk-write blast radius. **Operator-only via `disable-model-invocation: true`.** The CLI's mandatory `batch plan` then `batch run --confirm` dance is the load-bearing safety.
 

@@ -14,7 +14,7 @@ import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { emit, fail } from "../output.js";
+import { emit, fail, progressReporter } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
 function client(ctx) {
@@ -26,12 +26,32 @@ function client(ctx) {
     return new DescriptClient({ token: creds.token });
 }
 const noWait = (ctx) => ctx.flags["no-wait"] === true;
+// Poll options for every job the CLI waits on. Human mode shows Underlord's
+// progress labels on stderr; --json shows none (see progressReporter).
+function pollOptions(ctx, context) {
+    return { ...ctx.poll, onPoll: progressReporter(ctx.io, context) };
+}
+// Per-item poll options for export. One publish reads plainly; with several
+// running at once each progress line names its composition (a title shared by
+// regional variants gets the id prefix too, as folder names do).
+function exportPollFor(ctx, count, titles = new Map()) {
+    const seen = new Map();
+    for (const t of titles.values())
+        if (t)
+            seen.set(t, (seen.get(t) ?? 0) + 1);
+    return (item) => {
+        if (count < 2)
+            return pollOptions(ctx);
+        const id = item.compositionId ?? "";
+        const title = titles.get(id);
+        return pollOptions(ctx, title ? ((seen.get(title) ?? 0) > 1 ? `${title} [${id.slice(0, 8)}]` : title) : id.slice(0, 8));
+    };
+}
 const TEAM_ACCESS = ["edit", "comment", "view", "none"];
 const MEDIA_TYPE = ["Video", "Audio"];
 const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"];
-const ACCESS_LEVEL = ["public", "unlisted", "private"];
-// NOTE: "publish" is intentionally absent - the GET /jobs endpoint does not accept it.
-const JOB_TYPE = ["import/project_media", "agent"];
+const ACCESS_LEVEL = ["public", "unlisted", "drive", "private"];
+const JOB_TYPE = ["import/project_media", "import/drive_media", "agent", "publish", "export/timeline"];
 const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"];
 const PROJECT_DIRECTION = ["asc", "desc"];
 const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"];
@@ -242,7 +262,8 @@ export const COMMANDS = {
             projectId,
             ...(ctx.args[1] ? { compositionId: ctx.args[1] } : {}),
             language,
-            ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {})
+            ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {}),
+            poll: pollOptions(ctx)
         });
         if (!out.ok) {
             fail(ctx.io, out.error ?? "translate job failed", out);
@@ -330,7 +351,7 @@ export const COMMANDS = {
                 emit(ctx.io, `Submitted ${s.job_id}`, s);
                 return 0;
             }
-            const out = await importAndWait(c, req);
+            const out = await importAndWait(c, req, pollOptions(ctx));
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
         }
@@ -359,7 +380,7 @@ export const COMMANDS = {
                 emit(ctx.io, `Submitted ${s.job_id}`, s);
                 return 0;
             }
-            const out = await importAndWait(c, req);
+            const out = await importAndWait(c, req, pollOptions(ctx));
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
         }
@@ -380,7 +401,7 @@ export const COMMANDS = {
                 emit(ctx.io, `Submitted import job ${submit.job_id}`, submit);
                 return 0;
             }
-            const final = await pollJob((id) => c.getJob(id), submit.job_id);
+            const final = await pollJob((id) => c.getJob(id), submit.job_id, pollOptions(ctx));
             const out = normalizeImportJob(submit, final);
             emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
             return out.ok ? 0 : 4;
@@ -392,7 +413,7 @@ export const COMMANDS = {
             emit(ctx.io, `Submitted ${s.job_id}`, s);
             return 0;
         }
-        const out = await importAndWait(c, req);
+        const out = await importAndWait(c, req, pollOptions(ctx));
         emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
         return out.ok ? 0 : 4;
     },
@@ -419,7 +440,7 @@ export const COMMANDS = {
             emit(ctx.io, `Submitted ${s.job_id}`, s);
             return 0;
         }
-        const out = await editAndWait(c, req);
+        const out = await editAndWait(c, req, pollOptions(ctx));
         emit(ctx.io, out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
             : `Agent failed: ${out.error}`, out);
         return out.ok ? 0 : 4;
@@ -459,7 +480,7 @@ export const COMMANDS = {
             emit(ctx.io, `Submitted ${s.job_id}`, s);
             return 0;
         }
-        const out = await publishAndWait(c, req);
+        const out = await publishAndWait(c, req, pollOptions(ctx));
         emit(ctx.io, out.ok ? `Published: ${out.shareUrl}` : `Publish failed: ${out.error}`, out);
         return out.ok ? 0 : 4;
     },
@@ -730,6 +751,7 @@ export const COMMANDS = {
                     concurrency,
                     command: "export",
                     publish: { mediaType, resolution, accessLevel },
+                    pollFor: exportPollFor(ctx, reconstructed.itemsToRun.length),
                     writeReport: false
                 });
                 batchItems = batchReport.items;
@@ -830,7 +852,8 @@ export const COMMANDS = {
         const report = await exportBatch(c, {
             items: batchItems, outputDir, formats, endMarker, concurrency,
             command: "export",
-            publish: { mediaType, resolution, accessLevel }
+            publish: { mediaType, resolution, accessLevel },
+            pollFor: exportPollFor(ctx, batchItems.length, new Map(items.map((i) => [i.compositionId, i.title])))
         });
         emit(ctx.io, `Exported ${report.items.filter((i) => i.ok).length}/${report.items.length} item(s)`, report);
         return report.ok ? 0 : 4;

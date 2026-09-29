@@ -1,5 +1,18 @@
 export type JobState = "queued" | "running" | "stopped" | "cancelled";
-export type JobType = "import/project_media" | "agent" | "publish";
+/**
+ * Every job type GET /jobs accepts as its `type` filter (live-verified 2026-09-30).
+ * JobStatus below models only the three types this plugin submits and polls; a
+ * `jobs list --type import/drive_media` or `export/timeline` response still comes
+ * back as JSON, it just is not narrowed by the union.
+ */
+export type JobType = "import/project_media" | "import/drive_media" | "agent" | "publish" | "export/timeline";
+
+/**
+ * Who can open a published composition. `drive` means members of the Drive only.
+ * The API accepts all four (live-verified 2026-09-30); the plugin still sends
+ * `private` unless the caller names a level.
+ */
+export type AccessLevel = "public" | "unlisted" | "drive" | "private";
 
 export interface ApiErrorBody {
   error: string;
@@ -54,7 +67,7 @@ export interface PublishRequest {
   composition_id?: string;
   media_type?: "Video" | "Audio";
   resolution?: "480p" | "720p" | "1080p" | "1440p" | "4K";
-  access_level?: "public" | "unlisted" | "private";
+  access_level?: AccessLevel;
   callback_url?: string;
 }
 
@@ -156,8 +169,8 @@ export interface ListJobsResponse {
 }
 export interface ListJobsQuery {
   project_id?: string;
-  /** API-defined filter: the GET /jobs endpoint does not accept "publish" (unlike JobType). See docs/descript-openapi.json. */
-  type?: "import/project_media" | "agent";
+  /** GET /jobs accepts exactly the five JobType values (live-verified 2026-09-30); anything else is a 400. */
+  type?: JobType;
   cursor?: string;
   limit?: number;
   created_after?: string;

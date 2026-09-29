@@ -5,7 +5,7 @@ description: Publish a Descript composition to a shareable link or downloadable 
 
 # Descript Publish
 
-Publish a composition. Model-invocable with a mandatory in-skill confirmation step. Publish creates a hosted share URL but is not billable on standard Descript plans. The confirmation gate handles the risk - any access level above `private` makes the URL externally reachable, so the default-private posture below is load-bearing safety, not paperwork.
+Publish a composition. Model-invocable with a mandatory in-skill confirmation step. Publish creates a hosted share URL but is not billable on standard Descript plans. The confirmation gate handles the risk - `unlisted` and `public` make the URL externally reachable and `drive` opens it to every member of the Drive, so the default-private posture below is load-bearing safety, not paperwork.
 
 Per the Stream B model-invocation policy ADR (`docs/specs/2026-05-20-model-invocation-policy.md`), this skill uses the same in-skill confirmation pattern as `descript-edit` and `descript-export`. Single-composition publishes are reachable conversationally; bulk publishes still require operator-only via `descript-batch`.
 
@@ -19,7 +19,7 @@ Per the Stream B model-invocation policy ADR (`docs/specs/2026-05-20-model-invoc
 
 1. Confirm scope. Project id, composition id, media type, resolution.
 
-2. Confirm access level. Default is `private` (export-and-download posture; no external leakage). Only override to `unlisted` or `public` if the user has explicitly requested an externally-reachable URL. Treat `unlisted` and `public` as a separate decision from publishing itself - state the access level explicitly before submitting and get affirmative user confirmation on the elevation.
+2. Confirm access level. Default is `private` (export-and-download posture; no external leakage). The other levels are `drive` (visible only to members of the Drive), `unlisted` (anyone with the link) and `public` (anyone, and search engines may index it). Only override to `drive`, `unlisted` or `public` if the user has asked for that level in affirmative language. Treat every one of them as a separate decision from publishing itself - state the access level explicitly before submitting and get affirmative user confirmation on the elevation.
 
 3. Before submitting, state the full intended command (project id, composition id, media type, resolution, access level) and get explicit user confirmation.
 
