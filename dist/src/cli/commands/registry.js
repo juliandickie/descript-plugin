@@ -6,7 +6,7 @@ import { editAndWait } from "../../workflows/editAndWait.js";
 import { translateAndMap } from "../../workflows/translate.js";
 import { pollJob } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
-import { directUpload } from "../../workflows/upload.js";
+import { directUpload, mediaRefForFile } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { exportBatch } from "../../workflows/exportBatch.js";
 import { parseNamingManifest, renderBatchNames, VIMEO_NAME_CAP } from "../../workflows/nameTemplate.js";
@@ -368,11 +368,13 @@ export const COMMANDS = {
             return 2;
         }
         if (file) {
+            const mediaRef = mediaRefForFile(file);
             const submit = await directUpload(c, {
-                mediaRef: "upload.media",
+                mediaRef,
                 filePath: file,
                 contentType: typeof ctx.flags["content-type"] === "string" ? ctx.flags["content-type"] : "video/mp4",
-                request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: "upload.media" }] }], ...extra }
+                language,
+                request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: mediaRef }] }], ...extra }
             });
             if (noWait(ctx)) {
                 emit(ctx.io, `Submitted import job ${submit.job_id}`, submit);

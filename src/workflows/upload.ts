@@ -1,4 +1,5 @@
 import { statSync, createReadStream } from "node:fs";
+import { basename } from "node:path";
 import { Readable } from "node:stream";
 import type { DescriptClient } from "../client/index.js";
 import type { ImportRequest, SubmitJobResponse } from "../client/types.js";
@@ -9,6 +10,12 @@ export interface DirectUploadParams {
   contentType: string;
   language?: string;
   request: ImportRequest;
+}
+
+// Descript infers the media type from the reference, so it must keep the file's
+// extension. Characters outside [A-Za-z0-9._-] become "-".
+export function mediaRefForFile(filePath: string): string {
+  return basename(filePath).replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
 export async function directUpload(
