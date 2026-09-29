@@ -51,6 +51,29 @@ test("runBatch executes import then edit then publish per item", async () => {
     const publishCall = calls.find((c) => typeof c.body === "string" && c.body.includes('"media_type"'));
     assert.equal(JSON.parse(publishCall.body).access_level, "private");
 });
+test("a manifest with access_level drive parses and the publish goes out as drive", async () => {
+    // Compile-time guard: BatchItem's access_level type must allow "drive".
+    const typed = { name: "t", source: { url: "https://x/a.mp4" }, publish: { access_level: "drive" } };
+    assert.equal(typed.publish?.access_level, "drive");
+    const m = parseManifest({
+        concurrency: 1,
+        items: [{ name: "vid1", source: { url: "https://x/a.mp4" }, project_name: "Vid 1", publish: { media_type: "Video", resolution: "1080p", access_level: "drive" } }]
+    });
+    assert.equal(m.items[0].publish?.access_level, "drive");
+    const { calls } = installMockFetch([
+        { status: 201, json: { job_id: "ij", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "ij", job_type: "import/project_media", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+                result: { status: "success", media_status: {}, media_seconds_used: 1, created_compositions: [{ id: "c", name: "Cut" }] } } },
+        { status: 201, json: { job_id: "pj", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "pj", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+                result: { status: "success", composition_id: "c", share_url: "https://share/x" } } }
+    ]);
+    const client = new DescriptClient({ token: "t" });
+    const report = await runBatch(client, m, { confirm: true, poll: { intervalMs: 1, sleep: async () => { } } });
+    assert.equal(report.items[0].status, "success");
+    const publishCall = calls.find((c) => typeof c.body === "string" && c.body.includes('"media_type"'));
+    assert.equal(JSON.parse(publishCall.body).access_level, "drive");
+});
 test("parseManifest rejects local file sources (URL-only batch)", () => {
     assert.throws(() => parseManifest({ items: [{ name: "x", source: { file: "/a.mp4", content_type: "video/mp4" } }] }), /URL-only/);
 });

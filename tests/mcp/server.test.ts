@@ -188,6 +188,16 @@ test("descript_import serialises object arguments as JSON and drops false boolea
     ["agent", "--project-id=p1", "--prompt=cut silences", "--no-wait", "--json"]);
 });
 
+test("descript_publish lists all four access levels and descript_jobs all five job types", () => {
+  const publish = TOOLS.find((t) => t.name === "descript_publish")!.description;
+  assert.match(publish, /access_level\?=private\|drive\|unlisted\|public/);
+  assert.match(publish, /drive/);
+  const jobs = TOOLS.find((t) => t.name === "descript_jobs")!.description;
+  for (const type of ["import/project_media", "import/drive_media", "agent", "publish", "export/timeline"]) {
+    assert.ok(jobs.includes(type), `descript_jobs should list ${type}`);
+  }
+});
+
 test("descript_batch and descript_published keep their positional shape", () => {
   assert.deepEqual(argvOf("descript_batch", { file: "m.json" }), ["batch", "plan", "m.json", "--json"]);
   assert.deepEqual(argvOf("descript_batch", { sub: "run", file: "m.json", confirm: true }), ["batch", "run", "m.json", "--confirm", "--json"]);

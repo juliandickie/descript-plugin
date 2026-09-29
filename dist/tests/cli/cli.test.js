@@ -168,15 +168,16 @@ test("publish rejects an invalid --resolution locally without calling the API", 
     assert.equal(calls.length, 0);
     assert.match(out.join(""), /resolution must be one of/);
 });
-test("publish rejects --access-level drive locally (not a real Descript access level)", async () => {
+test("publish rejects an invalid --access-level locally and the message lists all four levels", async () => {
     const { calls } = installMockFetch([{ status: 201, json: {} }]);
     const out = [];
-    const code = await runCli(["publish", "--project-id", "p", "--access-level", "drive", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    const code = await runCli(["publish", "--project-id", "p", "--access-level", "everyone", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
     assert.equal(code, 2);
     assert.equal(calls.length, 0);
-    assert.match(out.join(""), /access-level must be one of/);
-    // The error must enumerate only the three real Descript values, not include 'drive'.
-    assert.doesNotMatch(out.join(""), /drive/);
+    const text = out.join("");
+    assert.match(text, /access-level must be one of/);
+    for (const level of ["public", "unlisted", "drive", "private"])
+        assert.ok(text.includes(level), `message should list ${level}: ${text}`);
 });
 test("agent rejects a valueless --prompt without spending credits", async () => {
     const { calls } = installMockFetch([{ status: 201, json: {} }]);
@@ -395,11 +396,46 @@ test("export rejects --concurrency non-numeric", async () => {
     const code = await runCli(["export", "p", "c", "--concurrency", "abc", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
     assert.equal(code, 2);
 });
-test("export still rejects --access-level drive (v0.2.1 carry-forward)", async () => {
+test("export rejects an invalid --access-level locally and the message lists all four levels", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: {} }]);
     const out = [];
-    const code = await runCli(["export", "p", "c", "--access-level", "drive", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    const code = await runCli(["export", "p", "c", "--access-level", "everyone", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
     assert.equal(code, 2);
-    assert.match(out.join(""), /access-level must be one of/);
+    assert.equal(calls.length, 0);
+    const text = out.join("");
+    assert.match(text, /access-level must be one of/);
+    for (const level of ["public", "unlisted", "drive", "private"])
+        assert.ok(text.includes(level), `message should list ${level}: ${text}`);
+});
+test("export accepts --access-level drive and publishes with it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-drive-"));
+    const { calls } = installMockFetch([
+        { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "j", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+                result: { status: "success", share_url: "https://web.descript.com/p/view/slug-1", download_url: "https://gcs/X.mp4?s=1", download_url_expires_at: "2026-05-21T00:00:00Z" } } },
+        { status: 200, json: { download_url: "https://gcs/X.mp4?s=2", project_id: "p", publish_type: "video", privacy: "drive", metadata: { title: "X" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+        { status: 200, text: "X-bytes" }
+    ]);
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--output-dir", dir, "--formats", "md", "--access-level", "drive", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0, out.join(""));
+    assert.equal(JSON.parse(calls[0].body).access_level, "drive");
+    rmSync(dir, { recursive: true, force: true });
+});
+test("export publishes private when no --access-level is given", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-exp-default-"));
+    const { calls } = installMockFetch([
+        { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+        { status: 200, json: { job_id: "j", job_type: "publish", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+                result: { status: "success", share_url: "https://web.descript.com/p/view/slug-1" } } },
+        { status: 200, json: { download_url: "https://gcs/X.mp4?s=2", project_id: "p", publish_type: "video", privacy: "private", metadata: { title: "X" }, subtitles: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nx.\n" } },
+        { status: 200, text: "X-bytes" }
+    ]);
+    const out = [];
+    const code = await runCli(["export", "p", "c", "--output-dir", dir, "--formats", "md", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0, out.join(""));
+    assert.equal(JSON.parse(calls[0].body).access_level, "private");
+    rmSync(dir, { recursive: true, force: true });
 });
 test("import --url --folder sets folder_name in the request body", async () => {
     const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } }]);
@@ -565,13 +601,35 @@ test("jobs list --type import/project_media passes type in query string", async 
     assert.equal(code, 0);
     assert.ok(calls[0].url.includes("type=import"), `expected type=import... in URL, got: ${calls[0].url}`);
 });
-test("jobs list --type publish exits 2 without calling the API", async () => {
+test("jobs list --type publish sends type=publish and exits 0", async () => {
     const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
     const out = [];
     const code = await runCli(["jobs", "list", "--type", "publish", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+    assert.equal(code, 0, out.join(""));
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url.includes("type=publish"), `expected type=publish in URL, got: ${calls[0].url}`);
+});
+test("jobs list --type accepts every job type the API accepts", async () => {
+    for (const type of ["import/project_media", "import/drive_media", "agent", "publish", "export/timeline"]) {
+        const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+        const out = [];
+        const code = await runCli(["jobs", "list", "--type", type, "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+        assert.equal(code, 0, `${type}: ${out.join("")}`);
+        assert.equal(new URL(calls[0].url).searchParams.get("type"), type);
+        restoreFetch();
+    }
+});
+test("jobs list rejects an unknown --type without calling the API and lists all five types", async () => {
+    const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
+    const out = [];
+    const code = await runCli(["jobs", "list", "--type", "dubbing", "--json"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
     assert.equal(code, 2);
     assert.equal(calls.length, 0);
-    assert.match(out.join(""), /--type must be one of/);
+    const text = out.join("");
+    assert.match(text, /--type must be one of/);
+    for (const type of ["import/project_media", "import/drive_media", "agent", "publish", "export/timeline"]) {
+        assert.ok(text.includes(type), `message should list ${type}: ${text}`);
+    }
 });
 test("jobs list --limit 50 passes limit in query string", async () => {
     const { calls } = installMockFetch([{ status: 200, json: { data: [], pagination: {} } }]);
@@ -1289,6 +1347,17 @@ test("publish sends access_level private when no level is given", async () => {
 test("publish sends the level the caller asked for", async () => {
     assert.equal((await publishBody(["--access-level", "unlisted"])).body.access_level, "unlisted");
     assert.equal((await publishBody(["--access-level", "public"])).body.access_level, "public");
+});
+test("publish --access-level drive sends access_level drive and exits 0", async () => {
+    const r = await publishBody(["--access-level", "drive"]);
+    assert.equal(r.code, 0, r.out);
+    assert.equal(r.calls, 1);
+    assert.equal(r.body.access_level, "drive");
+});
+test("the usage text lists all four access levels with private as the default", async () => {
+    const c = capture();
+    assert.equal(await runCli(["help"], { env: {}, stdout: c.write, stderr: c.write }), 0);
+    assert.match(c.out.join(""), /--access-level private\|drive\|unlisted\|public, default private/);
 });
 test("publish --drive-default-access omits access_level, and cannot be combined with --access-level", async () => {
     const r = await publishBody(["--drive-default-access"]);

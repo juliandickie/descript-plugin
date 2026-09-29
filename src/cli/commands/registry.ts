@@ -4,7 +4,7 @@ import { resolveCredentials } from "../../config/credentials.js";
 import { importAndWait, normalizeImportJob } from "../../workflows/importAndWait.js";
 import { editAndWait } from "../../workflows/editAndWait.js";
 import { translateAndMap } from "../../workflows/translate.js";
-import { pollJob } from "../../workflows/poll.js";
+import { pollJob, type PollOptions } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
 import { directUpload, mediaRefForFile } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
@@ -15,9 +15,9 @@ import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport, type ResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ImportRequest, EditInDescriptBody, ListJobsQuery, ListProjectsQuery, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
+import type { AccessLevel, ImportRequest, EditInDescriptBody, JobType, ListJobsQuery, ListProjectsQuery, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
 import type { IO } from "../output.js";
-import { emit, fail } from "../output.js";
+import { emit, fail, progressReporter } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
 
@@ -26,6 +26,8 @@ export interface Ctx {
   flags: Record<string, string | boolean>;
   env: Record<string, string | undefined>;
   io: IO;
+  /** Poll overrides handed in by runCli (a test seam); every CLI wait builds on it via pollOptions. */
+  poll?: PollOptions;
 }
 
 function client(ctx: Ctx): DescriptClient {
@@ -39,12 +41,31 @@ function client(ctx: Ctx): DescriptClient {
 
 const noWait = (ctx: Ctx) => ctx.flags["no-wait"] === true;
 
+// Poll options for every job the CLI waits on. Human mode shows Underlord's
+// progress labels on stderr; --json shows none (see progressReporter).
+function pollOptions(ctx: Ctx, context?: string): PollOptions {
+  return { ...ctx.poll, onPoll: progressReporter(ctx.io, context) };
+}
+
+// Per-item poll options for export. One publish reads plainly; with several
+// running at once each progress line names its composition (a title shared by
+// regional variants gets the id prefix too, as folder names do).
+function exportPollFor(ctx: Ctx, count: number, titles: ReadonlyMap<string, string | undefined> = new Map()): (item: ExportBatchItem) => PollOptions {
+  const seen = new Map<string, number>();
+  for (const t of titles.values()) if (t) seen.set(t, (seen.get(t) ?? 0) + 1);
+  return (item) => {
+    if (count < 2) return pollOptions(ctx);
+    const id = item.compositionId ?? "";
+    const title = titles.get(id);
+    return pollOptions(ctx, title ? ((seen.get(title) ?? 0) > 1 ? `${title} [${id.slice(0, 8)}]` : title) : id.slice(0, 8));
+  };
+}
+
 const TEAM_ACCESS = ["edit", "comment", "view", "none"] as const;
 const MEDIA_TYPE = ["Video", "Audio"] as const;
 const RESOLUTION = ["480p", "720p", "1080p", "1440p", "4K"] as const;
-const ACCESS_LEVEL = ["public", "unlisted", "private"] as const;
-// NOTE: "publish" is intentionally absent - the GET /jobs endpoint does not accept it.
-const JOB_TYPE = ["import/project_media", "agent"] as const;
+const ACCESS_LEVEL = ["public", "unlisted", "drive", "private"] as const;
+const JOB_TYPE = ["import/project_media", "import/drive_media", "agent", "publish", "export/timeline"] as const;
 const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"] as const;
 const PROJECT_DIRECTION = ["asc", "desc"] as const;
 const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"] as const;
@@ -245,7 +266,8 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       projectId,
       ...(ctx.args[1] ? { compositionId: ctx.args[1] } : {}),
       language,
-      ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {})
+      ...(typeof ctx.flags.model === "string" ? { model: ctx.flags.model } : {}),
+      poll: pollOptions(ctx)
     });
     if (!out.ok) { fail(ctx.io, out.error ?? "translate job failed", out); return 3; }
     if (out.mappingCaptureFailed) {
@@ -314,7 +336,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       }
       const req: ImportRequest = { project_id: projectId, add_media: addMedia, ...extra };
       if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-      const out = await importAndWait(c, req);
+      const out = await importAndWait(c, req, pollOptions(ctx));
       emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
       return out.ok ? 0 : 4;
     }
@@ -328,7 +350,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       }
       const req: ImportRequest = { project_name: name, add_media: addMedia, ...(addCompositions ? { add_compositions: addCompositions } : {}), ...extra };
       if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-      const out = await importAndWait(c, req);
+      const out = await importAndWait(c, req, pollOptions(ctx));
       emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
       return out.ok ? 0 : 4;
     }
@@ -345,7 +367,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
         request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: mediaRef }] }], ...extra }
       });
       if (noWait(ctx)) { emit(ctx.io, `Submitted import job ${submit.job_id}`, submit); return 0; }
-      const final = await pollJob((id) => c.getJob(id), submit.job_id);
+      const final = await pollJob((id) => c.getJob(id), submit.job_id, pollOptions(ctx));
       const out = normalizeImportJob(submit, final);
       emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
       return out.ok ? 0 : 4;
@@ -353,7 +375,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const urlMediaItem: ImportRequest["add_media"][string] = language ? { url: url!, language } : { url: url! };
     const req: ImportRequest = { project_name: name, add_media: { "media.0": urlMediaItem }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra };
     if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-    const out = await importAndWait(c, req);
+    const out = await importAndWait(c, req, pollOptions(ctx));
     emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
     return out.ok ? 0 : 4;
   },
@@ -373,7 +395,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       ...(typeof ctx.flags["team-access"] === "string" ? { team_access: ctx.flags["team-access"] as "edit" | "comment" | "view" | "none" } : {})
     };
     if (noWait(ctx)) { const s = await c.agentEditJob(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-    const out = await editAndWait(c, req);
+    const out = await editAndWait(c, req, pollOptions(ctx));
     emit(ctx.io,
       out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
              : `Agent failed: ${out.error}`,
@@ -396,7 +418,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       fail(ctx.io, "--drive-default-access cannot be combined with --access-level");
       return 2;
     }
-    const accessLevel = driveDefault ? undefined : ((ctx.flags["access-level"] as "public" | "unlisted" | "private" | undefined) ?? "private");
+    const accessLevel = driveDefault ? undefined : ((ctx.flags["access-level"] as AccessLevel | undefined) ?? "private");
     const req = {
       project_id: projectId,
       composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
@@ -406,7 +428,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {})
     };
     if (noWait(ctx)) { const s = await c.publishJob(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-    const out = await publishAndWait(c, req);
+    const out = await publishAndWait(c, req, pollOptions(ctx));
     emit(ctx.io, out.ok ? `Published: ${out.shareUrl}` : `Publish failed: ${out.error}`, out);
     return out.ok ? 0 : 4;
   },
@@ -428,7 +450,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       }
       const query: ListJobsQuery = {
         project_id: typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined,
-        type: typeof ctx.flags.type === "string" ? ctx.flags.type as "import/project_media" | "agent" : undefined,
+        type: typeof ctx.flags.type === "string" ? ctx.flags.type as JobType : undefined,
         created_after: typeof ctx.flags["created-after"] === "string" ? ctx.flags["created-after"] : undefined,
         created_before: typeof ctx.flags["created-before"] === "string" ? ctx.flags["created-before"] : undefined,
         limit,
@@ -584,7 +606,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const endMarker = ctx.flags["no-end-marker"] !== true;
     const mediaType = (ctx.flags["media-type"] as "Video" | "Audio") ?? "Video";
     const resolution = (ctx.flags.resolution as "480p" | "720p" | "1080p" | "1440p" | "4K") ?? "1080p";
-    const accessLevel = (ctx.flags["access-level"] as "public" | "unlisted" | "private") ?? "private";
+    const accessLevel = (ctx.flags["access-level"] as AccessLevel) ?? "private";
 
     // Three scope modes - positional <project-id> (single or whole-project),
     // --projects (multi-project), or --resume (replay a prior export).
@@ -653,6 +675,7 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
           concurrency,
           command: "export",
           publish: { mediaType, resolution, accessLevel },
+          pollFor: exportPollFor(ctx, reconstructed.itemsToRun.length),
           writeReport: false
         });
         batchItems = batchReport.items;
@@ -757,7 +780,8 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const report = await exportBatch(c, {
       items: batchItems, outputDir, formats, endMarker, concurrency,
       command: "export",
-      publish: { mediaType, resolution, accessLevel }
+      publish: { mediaType, resolution, accessLevel },
+      pollFor: exportPollFor(ctx, batchItems.length, new Map(items.map((i) => [i.compositionId, i.title])))
     });
     emit(ctx.io, `Exported ${report.items.filter((i) => i.ok).length}/${report.items.length} item(s)`, report);
     return report.ok ? 0 : 4;

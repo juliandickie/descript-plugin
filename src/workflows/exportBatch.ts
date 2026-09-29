@@ -1,8 +1,10 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { DescriptClient } from "../client/index.js";
+import type { AccessLevel } from "../client/types.js";
 import { exportPublished, type ExportFormat, type ExportPublishedResult, type ExportPublishedOptions } from "./exportPublished.js";
 import { publishAndWait, type SubmitRetryOptions } from "./publishAndWait.js";
+import type { PollOptions } from "./poll.js";
 import { DescriptApiError } from "../client/errors.js";
 
 export interface ExportBatchItem {
@@ -34,7 +36,7 @@ export interface ExportBatchOptions {
   publish?: {
     mediaType: "Video" | "Audio";
     resolution: "480p" | "720p" | "1080p" | "1440p" | "4K";
-    accessLevel: "public" | "unlisted" | "private";
+    accessLevel: AccessLevel;
   };
   /**
    * When false, exportBatch returns the in-memory report but does NOT write
@@ -53,6 +55,11 @@ export interface ExportBatchOptions {
   claimFolder?: ExportPublishedOptions["claimFolder"];
   /** Injectable sleep for the already-running publish wait. Defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Poll options for one item's publish job, called once per published item.
+   * The CLI uses it to attach a per-item progress reporter. Defaults to `{}`.
+   */
+  pollFor?: (item: ExportBatchItem) => PollOptions;
 }
 
 export interface ExportBatchReportItem extends ExportPublishedResult {
@@ -164,7 +171,7 @@ async function processOne(
         waitMs: ALREADY_RUNNING_WAIT_MS,
         maxAttempts: ALREADY_RUNNING_MAX_ATTEMPTS
       };
-      const out = await publishAndWait(client, publishReq, {}, submitRetry);
+      const out = await publishAndWait(client, publishReq, opts.pollFor?.(item) ?? {}, submitRetry);
       if (!out.ok || !out.shareUrl) {
         return {
           ok: false, slug: "", title: "", outputDir: "",

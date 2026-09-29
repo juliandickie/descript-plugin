@@ -1,5 +1,5 @@
 import type { DescriptClient } from "../client/index.js";
-import type { ImportRequest } from "../client/types.js";
+import type { AccessLevel, ImportRequest } from "../client/types.js";
 import { importAndWait } from "./importAndWait.js";
 import { editAndWait } from "./editAndWait.js";
 import { publishAndWait } from "./publishAndWait.js";
@@ -11,7 +11,7 @@ export interface BatchItem {
   project_id?: string;
   project_name?: string;
   agent_prompt?: string;
-  publish?: { media_type?: "Video" | "Audio"; resolution?: "480p" | "720p" | "1080p" | "1440p" | "4K"; access_level?: "public" | "unlisted" | "private" };
+  publish?: { media_type?: "Video" | "Audio"; resolution?: "480p" | "720p" | "1080p" | "1440p" | "4K"; access_level?: AccessLevel };
 }
 export interface BatchManifest {
   concurrency: number;
