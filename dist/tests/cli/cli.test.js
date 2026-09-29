@@ -54,7 +54,7 @@ test("import --file polls the real upload job, not a second import submit", asyn
     writeFileSync(path, Buffer.alloc(1024, 1));
     const { calls } = installMockFetch([
         { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u",
-                upload_urls: { "upload.media": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
+                upload_urls: { "clip.mp4": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
         { status: 200, text: "" },
         { status: 200, json: { job_id: "j", job_type: "import/project_media", job_state: "stopped", created_at: "t",
                 drive_id: "d", project_id: "p", project_url: "u",
@@ -77,7 +77,7 @@ test("import --file --no-wait emits the submit job without polling or re-submitt
     writeFileSync(path, Buffer.alloc(512, 1));
     const { calls } = installMockFetch([
         { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u",
-                upload_urls: { "upload.media": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
+                upload_urls: { "clip.mp4": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
         { status: 200, text: "" }
     ]);
     const out = [];
@@ -87,6 +87,49 @@ test("import --file --no-wait emits the submit job without polling or re-submitt
     assert.equal(code, 0);
     assert.equal(calls.length, 2); // submit + PUT only, no poll, no second submit
     assert.match(out.join(""), /"job_id": ?"j"/);
+    rmSync(dir, { recursive: true, force: true });
+});
+test("import --file uses the file's basename, extension kept and unsafe characters replaced, as the media reference", async () => {
+    // Descript infers the media type from the reference; an extensionless ref
+    // ("upload.media") failed every upload with "invalid or unsupported media content".
+    const dir = mkdtempSync(join(tmpdir(), "descript-cli-"));
+    const path = join(dir, "L1-02 - Course 1 (Single Unit) Crowns.m4a");
+    writeFileSync(path, Buffer.alloc(256, 1));
+    const ref = "L1-02---Course-1-Single-Unit-Crowns.m4a";
+    const { calls } = installMockFetch([
+        { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u",
+                upload_urls: { [ref]: { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
+        { status: 200, text: "" }
+    ]);
+    const out = [];
+    const code = await runCli(["import", "--file", path, "--content-type", "audio/mp4", "--name", "P", "--no-wait", "--json"], {
+        env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s)
+    });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.deepEqual(Object.keys(body.add_media), [ref]);
+    assert.equal(body.add_media[ref].content_type, "audio/mp4");
+    assert.equal(body.add_media[ref].file_size, 256);
+    assert.deepEqual(body.add_compositions, [{ name: "P", clips: [{ media: ref }] }]);
+    assert.equal(calls[1].method, "PUT");
+    rmSync(dir, { recursive: true, force: true });
+});
+test("import --file passes --language onto the uploaded media item", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "descript-cli-"));
+    const path = join(dir, "clip.wav");
+    writeFileSync(path, Buffer.alloc(64, 1));
+    const { calls } = installMockFetch([
+        { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u",
+                upload_urls: { "clip.wav": { upload_url: "https://gcs/s", asset_id: "a", artifact_id: "b" } } } },
+        { status: 200, text: "" }
+    ]);
+    const out = [];
+    const code = await runCli(["import", "--file", path, "--content-type", "audio/wav", "--language", "es", "--no-wait", "--json"], {
+        env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s)
+    });
+    assert.equal(code, 0);
+    const body = JSON.parse(calls[0].body);
+    assert.equal(body.add_media["clip.wav"].language, "es");
     rmSync(dir, { recursive: true, force: true });
 });
 test("import --url passes --callback-url and --team-access into the request body", async () => {
