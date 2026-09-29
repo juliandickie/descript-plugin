@@ -27,6 +27,10 @@ Only the agent operation is billable on standard Descript plans (AI credits and 
 
 - `descript-download-published` is read-only and unrestricted.
 
+- `descript-search` and `descript-timeline` are unrestricted. Search is read-only; timeline export creates a local file and a 24-hour download link, no share page and no AI credits.
+
+- `descript-import` stays model-invocable, but `--library` has an in-skill confirmation step, because it writes to the Drive's shared media library, which every Drive member can see.
+
 Always report `ai_credits_used` and `media_seconds_used` when the agent runs (zero is expected for publish-only and import-only flows).
 
 **Rule of thumb for future skills** - Operator-gate any skill whose blast radius extends beyond a single composition, or that can spend AI credits transitively via `agent_prompt` items. Otherwise default to model-invocable with the in-skill confirmation pattern.
