@@ -111,3 +111,14 @@ New since 2026-08-27 - `claude-opus-5.5`, `gpt-6-astra`, `gpt-6-astra-pro`. Alia
 ## Artefacts left in the Drive
 
 Six `export/timeline` jobs on the test project (their download URLs expire 24 hours after creation). No projects or media were created by this audit.
+
+## Addendum - results from building v0.8.0 (same day)
+
+Everything in "Candidate plugin work" was built on this branch and exercised live against the iDD Drive, using the QA project `367904fa-3a71-4794-923b-d4668dd1f4f3` ("v0.8.0 QA tone", a 5-second test tone).
+
+- `publish --access-level drive` reaches the API, which rejects it for the iDD Drive with 403 "Access level drive is not permitted by this drive's publish settings. Allowed levels public, unlisted, private." The earlier "accepts access_level drive" finding holds at validation level only. Whether a publish succeeds depends on each Drive's publish settings. Nothing was published.
+- `update_compositions` was exercised: a directly uploaded file appended to composition `22ddf` took it from 5 to 10 seconds. So `append_clips[].media` does accept a key whose `add_media` entry is a direct upload.
+- `POST /jobs/import/drive_media` was exercised with a direct upload. The job result is `{ status, media_status: { <key>: { status, duration_seconds } }, media_seconds_used }`, with job type `import/drive_media` and no project fields. The file (asset `f602ff08-7767-4b9a-a45c-60f08b7edc68`, `descript-plugin-qa-delete-me.wav`) sits in the media library root and is safe to delete.
+- Timeline export flags were exercised: `include_markers: false` and `create_track_per_file: true` on edl, `snap_frame_rates: false` on premiere with a short composition id, and aaf. All succeeded.
+- Running jobs carry `progress.label` on v1 (for example "Waiting for 1 file to be uploaded", then "Processing media").
+- Validation errors return `details[].message`, now shown by the CLI.

@@ -10,7 +10,8 @@ description: Search a Descript Drive for projects, media files, folders and layo
 - Find a project by name when the user has no id: search first, then use the returned `project_id` with transcript, edit, publish or export. (`descript projects list --name` also filters by name. Use search when the user remembers a spoken phrase, a media file or a folder rather than a project name, or wants projects, files and folders in one ranked list.)
 - Find which project contains a phrase: `--match content` searches transcripts and composition text.
 - Find media files by name across projects, the drive media library and Brand Studio: `--type video`, `audio` or `image`.
-- Find folder ids: `--type project_folder` or `--type media_library_folder`. Search is the only public source of folder ids. The `folder_id` of a `media_library_folder` result is the id a drive media library import takes as `folder_id`.
+- Find folder ids: `--type project_folder` or `--type media_library_folder`. Search is the only public source of folder ids. The `folder_id` of a `media_library_folder` result is the id `descript import --library --folder-id <id>` takes.
+- Search by words or by the full file name. Live on 2026-09-30, `descript-plugin-qa-delete-me.wav` and `delete me` both found a file, but the hyphenated fragment `descript-plugin-qa-delete-me` without the extension found nothing.
 - NOT for: listing every project (use `descript projects list`, it pages), or reading a transcript (use descript-transcript once you have the `project_id`).
 
 ## Instructions
