@@ -13,6 +13,7 @@ Commands:
   publish --project-id [...]     Publish a composition (--access-level private|drive|unlisted|public, default private; --drive-default-access uses the drive's configured default instead)
   jobs list|get <id>|cancel <id> Inspect or cancel jobs (list --project-id, --type, --created-after, --created-before, --limit 1-100, --cursor)
   projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
+  search <query...> [...]        Search the Drive for projects, media, folders and layout packs by name or transcript text, free and read-only (--type a,b of project|video|image|audio|project_folder|media_library_folder|layout_pack, --match name,content, --owner <uuid,...>, --updated-after, --updated-before, --sort relevance|newest|oldest, --limit 1-100; a query needs no quotes)
   published <slug>               Get published project metadata
   download-published <slug>      Download mp4/srt/md from a published slug
   export <pid> [cid] [...]       Publish + download mp4/srt/md (single, project-wide, or --projects; --resume <path> replays a prior export-report.json)

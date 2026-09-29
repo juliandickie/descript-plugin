@@ -5,7 +5,7 @@ import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 
 test("lists a tool per CLI surface", () => {
   const names = TOOLS.map((t) => t.name);
-  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate"]) {
+  for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate", "descript_search"]) {
     assert.ok(names.includes(n), `missing tool ${n}`);
   }
 });
@@ -208,7 +208,8 @@ test("every tool rejects an unknown argument before the CLI runs", async () => {
   const never = async () => { throw new Error("CLI must not run"); };
   const valid: Record<string, Record<string, unknown>> = {
     descript_published: { slug: "s" }, descript_batch: { file: "m.json" },
-    descript_transcript: { project_id: "p1" }, descript_translate: { project_id: "p1", language: "German" }
+    descript_transcript: { project_id: "p1" }, descript_translate: { project_id: "p1", language: "German" },
+    descript_search: { query: "q" }
   };
   for (const t of TOOLS) {
     const r = await handleRpc(
@@ -239,7 +240,8 @@ test("every argv a tool can build is accepted by the CLI flag table", async () =
     ["descript_import", { url: "u", file: "f", media: "{}", name: "n", folder: "f", language: "en", project_id: "p", workspace: "w", compositions: [], content_type: "video/mp4", team_access: "view", callback_url: "c", no_wait: true, profile: "x" }],
     ["descript_agent", { prompt: "x", project_id: "p", project_name: "n", composition_id: "c", model: "m", team_access: "view", callback_url: "c", no_wait: true }],
     ["descript_publish", { project_id: "p", composition_id: "c", media_type: "Video", resolution: "1080p", access_level: "private", callback_url: "c", no_wait: true }],
-    ["descript_transcript", { project_id: "p", format: "srt", out: "o", speaker_labels: "off", markers: true, timecodes: { on_paragraphs: true, on_speakers: true, on_markers: true, frequency_seconds: 5, offset_seconds: -1 } }]
+    ["descript_transcript", { project_id: "p", format: "srt", out: "o", speaker_labels: "off", markers: true, timecodes: { on_paragraphs: true, on_speakers: true, on_markers: true, frequency_seconds: 5, offset_seconds: -1 } }],
+    ["descript_search", { query: "q", type: ["project", "audio"], match: "name,content", owner: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"], updated_after: "2026-08-01", updated_before: "2026-08-31", sort: "newest", limit: 5 }]
   ];
   for (const [name, args] of samples) {
     const { command, flags } = parseArgv(argvOf(name, args));
@@ -269,6 +271,135 @@ test("descript_publish end to end - no access_level means private in the API req
     const body = JSON.parse(calls[0]!.body as string);
     assert.equal(body.access_level, "private");
     assert.equal(body.composition_id, "c1");
+  } finally {
+    if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
+    restoreFetch();
+  }
+});
+
+// =========================================================================
+// descript_search (GET /search) - free, read-only. type, match and owner take
+// a JSON array of strings or a comma-separated string.
+// =========================================================================
+
+const OWNER_A = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+const OWNER_B = "9f36ee32-5a2c-47e7-b1a3-94991d3e3ddb";
+
+test("descript_search turns array type, match and owner arguments into the CLI's comma-separated flags", () => {
+  assert.deepEqual(
+    argvOf("descript_search", { query: "quarterly update", type: ["project", "audio"], match: ["name", "content"], owner: [OWNER_A, OWNER_B] }),
+    ["search", "quarterly update", "--type=project,audio", "--match=name,content", `--owner=${OWNER_A},${OWNER_B}`, "--json"]
+  );
+});
+
+test("descript_search passes comma-separated string type, match and owner arguments through unchanged", () => {
+  assert.deepEqual(
+    argvOf("descript_search", { query: "crowns", type: "project,audio", match: "content", owner: `${OWNER_A},${OWNER_B}` }),
+    ["search", "crowns", "--type=project,audio", "--match=content", `--owner=${OWNER_A},${OWNER_B}`, "--json"]
+  );
+});
+
+test("descript_search accepts a single-element array and a single string value alike", () => {
+  const want = ["search", "q", "--type=project_folder", "--json"];
+  assert.deepEqual(argvOf("descript_search", { query: "q", type: ["project_folder"] }), want);
+  assert.deepEqual(argvOf("descript_search", { query: "q", type: "project_folder" }), want);
+});
+
+test("descript_search leaves out empty, null and undefined list arguments", () => {
+  assert.deepEqual(argvOf("descript_search", { query: "q", type: [], match: "", owner: null, sort: undefined }), ["search", "q", "--json"]);
+});
+
+test("descript_search forwards the scalar filters, in snake_case or kebab-case", () => {
+  const want = ["search", "q", "--updated-after=2026-08-01", "--updated-before=2026-08-31T23:59:59Z", "--sort=newest", "--limit=10", "--json"];
+  assert.deepEqual(argvOf("descript_search", { query: "q", updated_after: "2026-08-01", updated_before: "2026-08-31T23:59:59Z", sort: "newest", limit: 10 }), want);
+  assert.deepEqual(argvOf("descript_search", { query: "q", "updated-after": "2026-08-01", "updated-before": "2026-08-31T23:59:59Z", sort: "newest", limit: 10 }), want);
+});
+
+test("descript_search keeps a multi-word query as one argument", () => {
+  assert.deepEqual(argvOf("descript_search", { query: "how to prep a crown" }), ["search", "how to prep a crown", "--json"]);
+});
+
+test("descript_search rejects a missing query, a flag-looking query and an unknown argument", () => {
+  assert.throws(() => argvOf("descript_search", {}), /missing required argument "query"/);
+  assert.throws(() => argvOf("descript_search", { query: "" }), /missing required argument "query"/);
+  assert.throws(() => argvOf("descript_search", { query: "--json" }), /cannot start with "--"/);
+  assert.throws(() => argvOf("descript_search", { query: "q", folder_path: "x" }), /Unknown argument "folder_path"/);
+  assert.throws(() => argvOf("descript_search", { query: "q", types: ["project"] }), /Unknown argument "types"/);
+});
+
+test("descript_search rejects list arguments that are not strings or arrays of strings", () => {
+  for (const bad of [{ type: 5 }, { type: true }, { match: { name: true } }, { owner: [OWNER_A, 7] }, { type: [["project"]] }]) {
+    assert.throws(() => argvOf("descript_search", { query: "q", ...bad }), /descript_search: (type|match|owner) must be/, JSON.stringify(bad));
+  }
+});
+
+test("descript_search never runs the CLI when an argument is malformed", async () => {
+  const never = async () => { throw new Error("CLI must not run"); };
+  const cases: Array<[Record<string, unknown>, RegExp]> = [
+    [{}, /missing required argument "query"/],
+    [{ query: "q", type: 5 }, /descript_search: type must be/],
+    [{ query: "q", nope: 1 }, /Unknown argument "nope"/]
+  ];
+  for (const [args, message] of cases) {
+    const r = await handleRpc({ jsonrpc: "2.0", id: 50, method: "tools/call", params: { name: "descript_search", arguments: args } }, never);
+    assert.equal(r!.result.isError, true, JSON.stringify(args));
+    assert.match(r!.result.content[0].text, message, JSON.stringify(args));
+  }
+});
+
+test("descript_search is described as free and read-only, and names every enum", () => {
+  const d = TOOLS.find((t) => t.name === "descript_search")!.description;
+  assert.match(d, /free/i);
+  assert.match(d, /read-only/i);
+  assert.match(d, /query/);
+  for (const v of ["project", "video", "image", "audio", "project_folder", "media_library_folder", "layout_pack", "name", "content", "relevance", "newest", "oldest"]) {
+    assert.ok(d.includes(v), `description should mention ${v}`);
+  }
+  for (const a of ["type", "match", "owner", "updated_after", "updated_before", "sort", "limit"]) {
+    assert.ok(d.includes(a), `description should mention ${a}`);
+  }
+  assert.match(d, /1-100/);
+});
+
+test("descript_search end to end - array arguments reach the API as repeated query keys and the response comes back as JSON", async () => {
+  const body = { results: [{ type: "project", project_id: "p1", name: "Quarterly update", url: "https://web.descript.com/p1", updated_at: "2026-08-15T14:00:00.000Z" }] };
+  const { calls } = installMockFetch([{ status: 200, json: body }]);
+  const prev = process.env.DESCRIPT_API_TOKEN;
+  process.env.DESCRIPT_API_TOKEN = "t";
+  try {
+    const r = await handleRpc(
+      { jsonrpc: "2.0", id: 51, method: "tools/call", params: { name: "descript_search", arguments: {
+        query: "quarterly update", type: ["project", "audio"], match: "content", owner: [OWNER_A, OWNER_B], sort: "newest", limit: 5 } } },
+      realExecutor
+    );
+    assert.equal(r!.result.isError, false, r!.result.content[0].text);
+    assert.deepEqual(JSON.parse(r!.result.content[0].text), body);
+    const p = new URL(calls[0]!.url).searchParams;
+    assert.equal(new URL(calls[0]!.url).pathname, "/v1/search");
+    assert.equal(p.get("query"), "quarterly update");
+    assert.deepEqual(p.getAll("type"), ["project", "audio"]);
+    assert.deepEqual(p.getAll("match"), ["content"]);
+    assert.deepEqual(p.getAll("owner"), [OWNER_A, OWNER_B]);
+    assert.equal(p.get("sort"), "newest");
+    assert.equal(p.get("limit"), "5");
+  } finally {
+    if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
+    restoreFetch();
+  }
+});
+
+test("descript_search surfaces a CLI validation failure as isError without calling the API", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: { results: [] } }]);
+  const prev = process.env.DESCRIPT_API_TOKEN;
+  process.env.DESCRIPT_API_TOKEN = "t";
+  try {
+    const r = await handleRpc(
+      { jsonrpc: "2.0", id: 52, method: "tools/call", params: { name: "descript_search", arguments: { query: "q", type: ["project", "dubbing"] } } },
+      realExecutor
+    );
+    assert.equal(r!.result.isError, true);
+    assert.match(r!.result.content[0].text, /dubbing/);
+    assert.equal(calls.length, 0);
   } finally {
     if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
     restoreFetch();

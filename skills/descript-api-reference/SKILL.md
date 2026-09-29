@@ -12,7 +12,7 @@ Spec baseline - version 1.2, refreshed 2026-09-30 (`docs/descript-openapi.json`)
 
 ## CLI map
 
-descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
+descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, search, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
 
 ## Per-endpoint highest-impact delta
 
@@ -74,6 +74,20 @@ State is `queued`, `running`, `stopped`, `cancelled`. Completion is `job_state =
 
 - See `docs/help-docs/Descript API.md` under "List projects" for the full filter set.
 
+### search (GET /search)
+
+Free, read-only, synchronous, no job and no share URL. Searches the token's Drive across project names, folder names, layout pack names, media file names, composition text and transcripts, covering projects, the drive media library and Brand Studio. Up to 100 results, relevance-ranked. Documented in spec 1.2 and live-verified 2026-09-30.
+
+- CLI - `descript search <query words...> [--type a,b] [--match name,content] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]`. Every positional word is part of the query. List flags are comma-separated on the CLI and go out as repeated query keys (`type=project&type=audio`). Enum violations, a non-UUID `--owner`, a bad `--limit` and an empty query fail at parse time (exit 2, no request). Skill - `descript-search`. MCP tool - `descript_search`, whose `type`, `match` and `owner` take an array or a comma-separated string.
+
+- Params - `query` (required, non-empty), repeatable `type` (project, video, image, audio, project_folder, media_library_folder, layout_pack), repeatable `match` (`name` for names, `content` for transcripts and composition text; default both), repeatable `owner` (user UUIDs), `updated_after` and `updated_before` (ISO 8601 date, read as the start or end of that UTC day, or a timestamp; no offset means UTC), `sort` (relevance default, newest, oldest), `limit` 1-100 (default 30). Invalid enum values are a 400 that lists the allowed ones.
+
+- Results - project and layout_pack carry `project_id`, `name`, `url`, `owner?`, `updated_at`. Media (video, image, audio) carry `asset_id`, `name`, `location` (`media_library`, `project` or `brand_studio`), `project_id` (only for `project`) or `brand_studio_id` (only for `brand_studio`), `url`, `updated_at`, and `thumbnail_url` (signed, time-limited) and `duration` (seconds) when they exist. project_folder carries `folder_id`; media_library_folder carries `folder_id` and `location`. There is no match snippet, a content hit is the containing project.
+
+- Folder results are the only public source of `folder_id`. `project_folder` gives names, ids and URLs but no hierarchy. The `folder_id` of a `media_library_folder` result is what a drive media library import takes (see "API surface the CLI does not wrap yet").
+
+- A 404 means the search endpoint is not enabled for the token's user; the CLI reports it as such rather than as a missing job or project.
+
 ### status (GET /status)
 
 Stabilized in the 2026-08-27 spec refresh - documented payload is `{ drive_id, drive_name, api_version }`, all required server-side; the plugin keeps its fields optional for resilience.
@@ -109,8 +123,6 @@ Partner-gated import URL exchange. Requires Descript onboarding to enable. Not u
 ### API surface the CLI does not wrap yet
 
 Verified 2026-09-30; see the capability audit for request shapes and evidence.
-
-- **search (GET /search, documented)** - free, read-only drive search across project, folder, layout pack and media names, composition text and transcripts. Params `query` (required), repeatable `type` (project, video, image, audio, project_folder, media_library_folder, layout_pack) and `match` (name, content), `owner`, `updated_after`, `updated_before`, `sort` (relevance, newest, oldest), `limit` 1-100. Folder results are the only public source of `folder_id`.
 
 - **timeline export (POST /jobs/export/timeline, live but undocumented)** - job result reports no AI credits or media seconds, and no share page is created. `format` edl, sesx, fcp, premiere, davinci_resolve or aaf; optional `composition_id`, `include_markers`, `create_track_per_file` (not fcp), `snap_frame_rates` (false only for premiere and davinci_resolve), `strip_spaces` (aaf only), `callback_url`. The stopped job's result carries a signed `download_url` valid for 24 hours. All six formats exercised successfully.
 
@@ -149,6 +161,8 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 - `download-published` (skill - `descript-download-published`) - read-only, free, unrestricted.
 
 - `transcript` (skill - `descript-transcript`) - free, read-only, no artifacts. Unrestricted.
+
+- `search` (skill - `descript-search`) - free, read-only, no artifacts, no confirmation step. Unrestricted.
 
 - `models` (no dedicated skill; documented here) - free, read-only. Unrestricted.
 

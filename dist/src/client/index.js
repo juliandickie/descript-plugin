@@ -6,6 +6,7 @@ import { getPublishedProjectMetadata } from "./published.js";
 import { postEditInDescriptSchema } from "./editInDescript.js";
 import { listAgentModels } from "./models.js";
 import { exportTranscript } from "./transcript.js";
+import { search } from "./search.js";
 export class DescriptClient {
     http;
     constructor(opts) {
@@ -24,6 +25,7 @@ export class DescriptClient {
     postEditInDescriptSchema(body) { return postEditInDescriptSchema(this.http, body); }
     listAgentModels() { return listAgentModels(this.http); }
     exportTranscript(req) { return exportTranscript(this.http, req); }
+    search(query) { return search(this.http, query); }
 }
 export { HttpClient } from "./http.js";
 export { DescriptApiError } from "./errors.js";

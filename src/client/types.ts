@@ -238,6 +238,84 @@ export interface AgentModelsResponse {
   aliases: AgentModelAlias[];
 }
 
+// GET /search (spec 1.2, live-verified 2026-09-30). Free and read-only.
+export type SearchType = "project" | "video" | "image" | "audio" | "project_folder" | "media_library_folder" | "layout_pack";
+export type SearchMatch = "name" | "content";
+export type SearchSort = "relevance" | "newest" | "oldest";
+export interface SearchQuery {
+  /** Search term, must be non-empty. */
+  query: string;
+  /** Result types to search; each item is sent as its own `type` key. Omit for all types. */
+  type?: SearchType[];
+  /** `name` matches names, `content` matches transcripts and composition text. Omit for both. */
+  match?: SearchMatch[];
+  /** User UUIDs; each item is sent as its own `owner` key. Omit for every owner. */
+  owner?: string[];
+  /** ISO 8601 date (start of that UTC day) or timestamp. */
+  updated_after?: string;
+  /** ISO 8601 date (end of that UTC day) or timestamp. */
+  updated_before?: string;
+  /** Defaults to relevance server-side. */
+  sort?: SearchSort;
+  /** 1-100, defaults to 30 server-side. */
+  limit?: number;
+}
+export interface SearchOwner {
+  id: string;
+  name: string;
+}
+interface SearchResultBase {
+  name: string;
+  /** Link that opens the result in Descript. */
+  url: string;
+  /** Omitted when the owner is unavailable. */
+  owner?: SearchOwner;
+  updated_at: string;
+}
+export interface ProjectSearchResult extends SearchResultBase {
+  type: "project";
+  project_id: string;
+}
+export interface LayoutPackSearchResult extends SearchResultBase {
+  type: "layout_pack";
+  /** The layout pack's own id (the spec names the field project_id). */
+  project_id: string;
+}
+export type SearchMediaLocation = "media_library" | "project" | "brand_studio";
+export interface MediaSearchResult extends SearchResultBase {
+  type: "video" | "image" | "audio";
+  asset_id: string;
+  /** Present only when location is `project`. */
+  project_id?: string;
+  /** Present only when location is `brand_studio`. */
+  brand_studio_id?: string;
+  location: SearchMediaLocation;
+  /** Time-limited signed preview URL for video and image files. */
+  thumbnail_url?: string;
+  /** Seconds. Omitted for images and files with no duration. */
+  duration?: number;
+}
+export interface ProjectFolderSearchResult extends SearchResultBase {
+  type: "project_folder";
+  folder_id: string;
+}
+export interface MediaLibraryFolderSearchResult extends SearchResultBase {
+  type: "media_library_folder";
+  /** The id a drive media library import takes as `folder_id`. */
+  folder_id: string;
+  location: "media_library";
+}
+export type SearchResult =
+  | ProjectSearchResult
+  | LayoutPackSearchResult
+  | MediaSearchResult
+  | ProjectFolderSearchResult
+  | MediaLibraryFolderSearchResult;
+export interface SearchResponse {
+  /** Ranked best match first (or by modified time when sort is newest or oldest). */
+  results: SearchResult[];
+}
+
 export type TranscriptFormat = "txt" | "markdown" | "html" | "rtf" | "docx" | "srt";
 export interface TranscriptTimecodeOptions {
   frequency_seconds?: number;
