@@ -8,6 +8,8 @@ user-invocable: false
 
 Background knowledge for building correct Descript requests. The plugin's CLI is the API contract; this file points at the canonical capability documentation rather than re-summarising it.
 
+Spec baseline - version 1.2, refreshed 2026-09-30 (`docs/descript-openapi.json`). The developer docs now live at https://help.descript.com/developers. The latest capability audit, including live-verified routes the spec does not document yet, is `docs/field-reports/2026-09-30-api-and-mcp-capability-audit.md`.
+
 ## CLI map
 
 descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
@@ -22,6 +24,12 @@ Async, returns `job_id`. URL imports, direct upload (three-step flow handled aut
 
 - See `docs/help-docs/Descript API.md` sections "Import media into a new project" and "Direct file upload" for the full request schema and the three-step upload walkthrough.
 
+- Descript infers the media type from the extension of the media reference (the `add_media` key) and of a URL's path; a correct `content_type` or server Content-Type does not make up for a missing extension. An extensionless reference fails the upload with "Uploaded file has invalid or unsupported media content"; an extensionless URL fails with "Failed to read media metadata". `--file` keeps the file's name as the reference since v0.7.2.
+
+- Clips in `add_compositions` take `mute` (spec 1.2) - for a sequence clip it mutes the sequence's own tracks, for any other clip it mutes the composition's script layer. Multitrack `tracks[]` entries also accept `mute` (live-validated, undocumented). Both pass through the raw `--media` / `--compositions` JSON for new projects.
+
+- `update_compositions: [{ composition_id, append_clips: [{ media, mute? }] }]` appends clips to an EXISTING composition (live-validated 2026-09-30, undocumented, requires `project_id`). Not reachable from the CLI yet - `--project-id` drops compositions. `add_compositions[].fps` is rejected by v1 even though Descript's MCP connector advertises it.
+
 ### agent (POST /jobs/agent)
 
 Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--project-id` OR `--project-name`, optional `--composition-id`, `--model`, `--callback-url`, `--team-access`.
@@ -32,7 +40,7 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 
 - The full capability surface (Captions, Clips, Animations, Translate, Sound Effects and Music, Slides to Video, plus empirically-confirmed Metadata and Query classes) lives in `docs/help-docs/Underlord (beta) Your AI co-editor in Descript.md`. Defer to that file when reasoning about what Underlord can do.
 
-- The full Underlord model list (Auto plus seven specific options) lives in the same help-docs file. Pass `--model` through as-is; the API validates.
+- Pass `--model` through as-is; the API validates. The live catalog on 2026-09-30 held fifteen models across Anthropic, OpenAI and Google (new since 2026-08-27 - `claude-opus-5.5`, `gpt-6-astra`, `gpt-6-astra-pro`), and the `claude-opus` alias still resolved to `claude-opus-4.8`. Descript's MCP connector lists only the Claude models in its tool description; the API accepts all of them.
 
 - Job results now include `resolved_model` (the canonical id that ran; `auto` requests report `auto`) and `conversation_id`. Model ids are canonical (`claude-haiku-4.5`) with tier aliases (`claude-haiku`) - run `descript models` for the live catalog instead of trusting any static list.
 
@@ -44,19 +52,21 @@ Async, spends AI credits. The richest endpoint in the plugin. CLI flags - `--pro
 
 ### publish (POST /jobs/publish)
 
-Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `private`; the v0.2.1 CLI rejects `drive` at parse time). The API uses the drive's configured default when `access_level` is omitted, so since v0.7.1 the CLI, the MCP tool and batch manifests send `private` unless a level is given; `--drive-default-access` (MCP `drive_default_access`) is the explicit opt-out.
+Async, free on standard plans (creates a hosted share URL). Video or Audio, resolution, access_level (`public`, `unlisted`, `drive`, `private`; the API accepts `drive` as of 2026-09-30, but the CLI still rejects it at parse time). The API uses the drive's configured default when `access_level` is omitted, so since v0.7.1 the CLI, the MCP tool and batch manifests send `private` unless a level is given; `--drive-default-access` (MCP `drive_default_access`) is the explicit opt-out.
 
 - **Republish keying** - the same `(project_id, composition_id, media_type)` reuses the prior share URL on every subsequent publish; bookmarks keep working. A Video publish and an Audio publish of the same composition produce two distinct share URLs.
+
+- Omitting `composition_id` publishes the first composition that has content, skipping the empty placeholder that agent- and import-created projects start with. An empty composition returns 400 naming the compositions that do have content.
 
 ### jobs (GET /jobs, GET /jobs/{id}, DELETE /jobs/{id})
 
 State is `queued`, `running`, `stopped`, `cancelled`. Completion is `job_state === "stopped"`, then `result.status` is `success`, `partial` (import only), or `error`.
 
-- The list endpoint accepts `type` filtered to `import/project_media` or `agent` only (NOT `publish`).
+- The list endpoint's `type` filter accepts `import/project_media`, `import/drive_media`, `agent`, `publish` and `export/timeline` (live-verified 2026-09-30). The CLI's `--type` guard still allows only `import/project_media` and `agent`, a stale restriction. Lists cover the last 7 days unless `created_after` says otherwise.
 
 - 30-day max lookback via `created_after` and `created_before`.
 
-- CLI filter flags - `--project-id`, `--type`, `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`. Enum violations (e.g. `--type publish`) fail fast at parse time. See `docs/help-docs/Descript API.md` under "List jobs" for the full parameter shape.
+- CLI filter flags - `--project-id`, `--type`, `--created-after`, `--created-before`, `--limit 1-100`, `--cursor`. Enum violations fail fast at parse time (today that includes the valid `--type publish`). See `docs/help-docs/Descript API.md` under "List jobs" for the full parameter shape.
 
 ### projects (GET /projects, GET /projects/{id})
 
@@ -74,7 +84,7 @@ Free, read-only. Returns `availableModels` (id + cost tier low|medium|high) and 
 
 ### transcript (POST /export/transcript)
 
-Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs, on_speakers}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
+Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition; accepts a UUID, 5-character short id or full project URL), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs, on_speakers}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
 
 ### translate (composed workflow over POST /jobs/agent, not a standalone endpoint)
 
@@ -95,6 +105,20 @@ Returns metadata, signed `download_url`, and WebVTT `subtitles` for a published 
 ### edit-in-descript (POST /edit_in_descript/schema)
 
 Partner-gated import URL exchange. Requires Descript onboarding to enable. Not user-reachable without the partner integration.
+
+### API surface the CLI does not wrap yet
+
+Verified 2026-09-30; see the capability audit for request shapes and evidence.
+
+- **search (GET /search, documented)** - free, read-only drive search across project, folder, layout pack and media names, composition text and transcripts. Params `query` (required), repeatable `type` (project, video, image, audio, project_folder, media_library_folder, layout_pack) and `match` (name, content), `owner`, `updated_after`, `updated_before`, `sort` (relevance, newest, oldest), `limit` 1-100. Folder results are the only public source of `folder_id`.
+
+- **timeline export (POST /jobs/export/timeline, live but undocumented)** - job result reports no AI credits or media seconds, and no share page is created. `format` edl, sesx, fcp, premiere, davinci_resolve or aaf; optional `composition_id`, `include_markers`, `create_track_per_file` (not fcp), `snap_frame_rates` (false only for premiere and davinci_resolve), `strip_spaces` (aaf only), `callback_url`. The stopped job's result carries a signed `download_url` valid for 24 hours. All six formats exercised successfully.
+
+- **drive media library import (POST /jobs/import/drive_media, live but undocumented)** - imports into the shared media library instead of a project; `add_media` entries take `url` or `content_type` plus `file_size`, optional `folder_id`. Validated only; not exercised, because it writes to the shared library.
+
+### Descript's official MCP connector
+
+Descript hosts its own MCP server (`https://api.descript.com/v2/mcp`, OAuth, one Drive per connection). The Claude directory connector exposes import (including `update_compositions` and drive media import), agent edits, publish, transcript export (no DOCX), timeline export, jobs with progress labels, projects, folder listing, drive info and upload-failure reporting. It has no search, published-download, batch or naming-standard workflow. Generative image and video tools exist only when the server is added by URL, not through the directory connector. Folder listing and upload-failure reporting have no public v1 route; everything else maps onto v1 endpoints.
 
 ## Rate limiting
 
@@ -133,6 +157,8 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 Contributor rule of thumb - operator-gate any skill whose blast radius extends beyond a single composition, or that can spend AI credits transitively via `agent_prompt` items.
 
 ## Help-docs index
+
+`docs/help-docs/` is local to the development checkout and is not tracked in git, so installed copies of the plugin do not have it. The live equivalents are on help.descript.com - the index is https://help.descript.com/llms.txt and every page is also served as Markdown by appending `.md`.
 
 - `docs/help-docs/Descript API.md` - endpoint surface, schemas, request samples, official CLI install notes.
 
