@@ -37,6 +37,23 @@ const HINTS: Record<ErrorCategory, string> = {
   http_error: "Unexpected HTTP error from the Descript API."
 };
 
+/**
+ * The `details[].message` strings of an API error body, in the order sent. A 400
+ * carries the useful part there (for example `"folder_id" must be a valid GUID`),
+ * while its top-level message only says the payload was invalid. Anything that is
+ * not a list of objects with a non-empty string message is skipped.
+ */
+export function errorDetailMessages(body: unknown): string[] {
+  const details = (body as { details?: unknown } | null | undefined)?.details;
+  if (!Array.isArray(details)) return [];
+  const out: string[] = [];
+  for (const d of details) {
+    const message = (d as { message?: unknown } | null | undefined)?.message;
+    if (typeof message === "string" && message.trim() !== "") out.push(message.trim());
+  }
+  return out;
+}
+
 export interface ErrorMeta {
   retryAfterSeconds?: number;
   rateLimitRemaining?: number;

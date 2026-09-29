@@ -12,7 +12,7 @@ Spec baseline - version 1.2, refreshed 2026-09-30 (`docs/descript-openapi.json`)
 
 ## CLI map
 
-descript status, config, import, agent, models, transcript, translate, publish, jobs, projects, search, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
+descript status, config, import, agent, models, transcript, timeline, translate, publish, jobs, projects, search, published, download-published, export, edit-in-descript, batch. Add `--json` for machine output, `--no-wait` to skip polling, `--profile` to select a Drive, `--token` to override credentials.
 
 ## Per-endpoint highest-impact delta
 
@@ -100,6 +100,14 @@ Free, read-only. Returns `availableModels` (id + cost tier low|medium|high) and 
 
 Free, synchronous, no job, no share URL. Body - `project_id` (required), `composition_id` (defaults to first composition; accepts a UUID, 5-character short id or full project URL), `format` (required - txt|markdown|html|rtf|docx|srt), `include_speaker_labels` (off|changes|every_paragraph, default changes), `include_markers`, `timecodes` {frequency_seconds, offset_seconds, on_markers, on_paragraphs, on_speakers}. Response is the raw file (binary for docx). For transcript-only workflows this replaces the publish-then-WebVTT path in `descript export` - never publish just to read a transcript.
 
+### timeline (POST /jobs/export/timeline, live but not yet in the public spec)
+
+Live-verified 2026-09-29/30 (all six formats returned success) but not in spec 1.2 (its `JobStatus` discriminator references a `TimelineExportJobStatus` schema that is never defined), so the plugin's types and tests pin the behaviour. Free, no share page, and the job result reports no AI credits or media seconds. Async, returns `job_id`; the job type is `export/timeline`. Body - `project_id` (required), `format` (required - `edl` Samplitude EDL for Reaper and Samplitude, `sesx` Adobe Audition, `fcp` Final Cut Pro X FCPXML 1.8, `premiere` Premiere Pro XML, `davinci_resolve` DaVinci Resolve XML, `aaf` Pro Tools and Logic, binary), `composition_id` (UUID, 5-character short id or project URL; defaults to the first composition), `include_markers` (the default depends on the format), `create_track_per_file` (rejected for fcp), `snap_frame_rates` (default true; false only for premiere and davinci_resolve), `strip_spaces` (aaf only), `callback_url`. Unknown fields are rejected. The submit response (201) is `{ job_id, drive_id, drive_name, project_id, project_url, format }`. A stopped, successful job's `result` is `{ status: "success", composition_id, file_name, content_type, download_url, download_url_expires_at }`; the `download_url` is a signed storage URL valid 24 hours and must be fetched WITHOUT the Descript Authorization header. A failed job has `result.status: "error"` with `error_message`. Media is never bundled.
+
+- CLI - `descript timeline <project-id> [composition-id] --format <format> [--out <path>] [--markers | --no-markers] [--track-per-file] [--source-frame-rate] [--strip-spaces] [--callback-url <url>] [--no-wait]`. `--source-frame-rate` sends `snap_frame_rates: false`. Only the flags set are sent. Format rules (`--track-per-file` not with fcp, `--source-frame-rate` only premiere and davinci_resolve, `--strip-spaces` only aaf, `--markers` not with `--no-markers`) fail at parse time (exit 2, no request). It polls, downloads and writes the file; `--out` may be a file or an existing folder, and with no `--out` the file is `./<project_id>-<file name>`. Exit `4` for a failed job, a failed download or a file that cannot be written (the last two keep the download link in the message). `--no-wait` prints the submit response and stops.
+- Skill - `descript-timeline`. MCP tool - `descript_timeline` (`format` required, `markers` true, false or omitted).
+- If this endpoint starts returning 404 or rejecting valid requests, the plugin needs updating. Re-check the spec before each release.
+
 ### translate (composed workflow over POST /jobs/agent, not a standalone endpoint)
 
 `descript translate <project-id> [composition-id] --language "<name>" [--model <m>]` - billable (spends AI credits via the underlying agent job). Snapshots the project's compositions, runs a self-contained agent prompt ("add captions if missing, then translate to <language>, captions only, no dubbing"), then re-fetches the project and diffs to find the new composition. This creation-time diff is the only reliable way to learn which composition carries which language - the API exposes no language field on compositions, and regional-variant translations share an identical title with their sibling (verified live 2026-08-28 on French (France) vs French (Canada)).
@@ -123,8 +131,6 @@ Partner-gated import URL exchange. Requires Descript onboarding to enable. Not u
 ### API surface the CLI does not wrap yet
 
 Verified 2026-09-30; see the capability audit for request shapes and evidence.
-
-- **timeline export (POST /jobs/export/timeline, live but undocumented)** - job result reports no AI credits or media seconds, and no share page is created. `format` edl, sesx, fcp, premiere, davinci_resolve or aaf; optional `composition_id`, `include_markers`, `create_track_per_file` (not fcp), `snap_frame_rates` (false only for premiere and davinci_resolve), `strip_spaces` (aaf only), `callback_url`. The stopped job's result carries a signed `download_url` valid for 24 hours. All six formats exercised successfully.
 
 - **drive media library import (POST /jobs/import/drive_media, live but undocumented)** - imports into the shared media library instead of a project; `add_media` entries take `url` or `content_type` plus `file_size`, optional `folder_id`. Validated only; not exercised, because it writes to the shared library.
 
@@ -163,6 +169,8 @@ Gate matrix per the Stream B ADR (`docs/specs/2026-05-20-model-invocation-policy
 - `transcript` (skill - `descript-transcript`) - free, read-only, no artifacts. Unrestricted.
 
 - `search` (skill - `descript-search`) - free, read-only, no artifacts, no confirmation step. Unrestricted.
+
+- `timeline` (skill - `descript-timeline`) - free, no AI credits, no share page, no confirmation step. Writes one local file. Unrestricted. Live but not yet in the published spec.
 
 - `models` (no dedicated skill; documented here) - free, read-only. Unrestricted.
 

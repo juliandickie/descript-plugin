@@ -4,7 +4,7 @@ import { handleRpc, handleLine, realExecutor, TOOLS } from "../../src/mcp/server
 import { installMockFetch, restoreFetch } from "../helpers/mockFetch.js";
 test("lists a tool per CLI surface", () => {
     const names = TOOLS.map((t) => t.name);
-    for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate", "descript_search"]) {
+    for (const n of ["descript_status", "descript_import", "descript_agent", "descript_publish", "descript_jobs", "descript_projects", "descript_published", "descript_edit_in_descript", "descript_batch", "descript_models", "descript_transcript", "descript_translate", "descript_search", "descript_timeline"]) {
         assert.ok(names.includes(n), `missing tool ${n}`);
     }
 });
@@ -142,7 +142,7 @@ test("every tool rejects an unknown argument before the CLI runs", async () => {
     const valid = {
         descript_published: { slug: "s" }, descript_batch: { file: "m.json" },
         descript_transcript: { project_id: "p1" }, descript_translate: { project_id: "p1", language: "German" },
-        descript_search: { query: "q" }
+        descript_search: { query: "q" }, descript_timeline: { project_id: "p1", format: "edl" }
     };
     for (const t of TOOLS) {
         const r = await handleRpc({ jsonrpc: "2.0", id: 30, method: "tools/call", params: { name: t.name, arguments: { ...(valid[t.name] ?? {}), definitely_not_an_option: 1 } } }, never);
@@ -168,7 +168,8 @@ test("every argv a tool can build is accepted by the CLI flag table", async () =
         ["descript_agent", { prompt: "x", project_id: "p", project_name: "n", composition_id: "c", model: "m", team_access: "view", callback_url: "c", no_wait: true }],
         ["descript_publish", { project_id: "p", composition_id: "c", media_type: "Video", resolution: "1080p", access_level: "private", callback_url: "c", no_wait: true }],
         ["descript_transcript", { project_id: "p", format: "srt", out: "o", speaker_labels: "off", markers: true, timecodes: { on_paragraphs: true, on_speakers: true, on_markers: true, frequency_seconds: 5, offset_seconds: -1 } }],
-        ["descript_search", { query: "q", type: ["project", "audio"], match: "name,content", owner: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"], updated_after: "2026-08-01", updated_before: "2026-08-31", sort: "newest", limit: 5 }]
+        ["descript_search", { query: "q", type: ["project", "audio"], match: "name,content", owner: ["3fa85f64-5717-4562-b3fc-2c963f66afa6"], updated_after: "2026-08-01", updated_before: "2026-08-31", sort: "newest", limit: 5 }],
+        ["descript_timeline", { project_id: "p", composition_id: "c", format: "premiere", out: "o", markers: false, track_per_file: true, source_frame_rate: true, strip_spaces: true, callback_url: "c", no_wait: true }]
     ];
     for (const [name, args] of samples) {
         const { command, flags } = parseArgv(argvOf(name, args));
@@ -304,6 +305,118 @@ test("descript_search surfaces a CLI validation failure as isError without calli
         const r = await handleRpc({ jsonrpc: "2.0", id: 52, method: "tools/call", params: { name: "descript_search", arguments: { query: "q", type: ["project", "dubbing"] } } }, realExecutor);
         assert.equal(r.result.isError, true);
         assert.match(r.result.content[0].text, /dubbing/);
+        assert.equal(calls.length, 0);
+    }
+    finally {
+        if (prev === undefined)
+            delete process.env.DESCRIPT_API_TOKEN;
+        else
+            process.env.DESCRIPT_API_TOKEN = prev;
+        restoreFetch();
+    }
+});
+// =========================================================================
+// descript_timeline (POST /jobs/export/timeline) - free, no share page. format
+// is required; markers is a tri-state (true, false, or left out).
+// =========================================================================
+test("descript_timeline builds the CLI argv from every argument", () => {
+    assert.deepEqual(argvOf("descript_timeline", {
+        project_id: "p1", composition_id: "c1", format: "premiere", out: "/tmp/lesson.xml",
+        markers: true, track_per_file: true, source_frame_rate: true, callback_url: "https://hooks.example.com/done", no_wait: true
+    }), ["timeline", "p1", "c1", "--format=premiere", "--out=/tmp/lesson.xml", "--track-per-file", "--source-frame-rate", "--callback-url=https://hooks.example.com/done", "--no-wait", "--markers", "--json"]);
+    assert.deepEqual(argvOf("descript_timeline", { project_id: "p1", format: "aaf", strip_spaces: true }), ["timeline", "p1", "--format=aaf", "--strip-spaces", "--json"]);
+    assert.deepEqual(argvOf("descript_timeline", { project_id: "p1", format: "edl" }), ["timeline", "p1", "--format=edl", "--json"]);
+});
+test("descript_timeline accepts kebab-case argument names and treats false switches as absent", () => {
+    assert.deepEqual(argvOf("descript_timeline", { project_id: "p1", format: "davinci_resolve", "source-frame-rate": true, "track-per-file": false, "no-wait": false }), ["timeline", "p1", "--format=davinci_resolve", "--source-frame-rate", "--json"]);
+});
+test("descript_timeline markers true becomes --markers, false becomes --no-markers, omitted adds neither", () => {
+    assert.deepEqual(argvOf("descript_timeline", { project_id: "p1", format: "fcp", markers: true }), ["timeline", "p1", "--format=fcp", "--markers", "--json"]);
+    assert.deepEqual(argvOf("descript_timeline", { project_id: "p1", format: "fcp", markers: false }), ["timeline", "p1", "--format=fcp", "--no-markers", "--json"]);
+    for (const omitted of [{}, { markers: undefined }, { markers: null }]) {
+        const argv = argvOf("descript_timeline", { project_id: "p1", format: "fcp", ...omitted });
+        assert.deepEqual(argv, ["timeline", "p1", "--format=fcp", "--json"]);
+    }
+});
+test("descript_timeline rejects a markers value that is not true or false", () => {
+    for (const bad of ["yes", "true", 1, 0, [], {}]) {
+        assert.throws(() => argvOf("descript_timeline", { project_id: "p1", format: "fcp", markers: bad }), /markers must be true or false/, JSON.stringify(bad));
+    }
+});
+test("descript_timeline rejects a missing format and a missing project_id before the CLI runs", () => {
+    assert.throws(() => argvOf("descript_timeline", { project_id: "p1" }), /missing required argument "format"/);
+    assert.throws(() => argvOf("descript_timeline", { project_id: "p1", format: "" }), /missing required argument "format"/);
+    assert.throws(() => argvOf("descript_timeline", { project_id: "p1", format: null }), /missing required argument "format"/);
+    assert.throws(() => argvOf("descript_timeline", { format: "edl" }), /missing required argument "project_id"/);
+    assert.throws(() => argvOf("descript_timeline", { project_id: "--json", format: "edl" }), /cannot start with "--"/);
+});
+test("descript_timeline rejects an unknown argument instead of ignoring it", async () => {
+    assert.throws(() => argvOf("descript_timeline", { project_id: "p1", format: "edl", include_markers: true }), /Unknown argument "include_markers"/);
+    assert.throws(() => argvOf("descript_timeline", { project_id: "p1", format: "edl", snap_frame_rates: false }), /Unknown argument "snap_frame_rates"/);
+    const r = await handleRpc({ jsonrpc: "2.0", id: 60, method: "tools/call", params: { name: "descript_timeline", arguments: { project_id: "p1", format: "edl", create_track_per_file: true } } }, async () => { throw new Error("CLI must not run"); });
+    assert.equal(r.result.isError, true);
+    assert.match(r.result.content[0].text, /Unknown argument "create_track_per_file"/);
+});
+test("descript_timeline is described as free, share-page-free, and lists the six formats with their target apps", () => {
+    const d = TOOLS.find((t) => t.name === "descript_timeline").description;
+    assert.match(d, /no share page/i);
+    assert.match(d, /no AI credits/i);
+    assert.match(d, /save it locally/i);
+    for (const f of ["edl", "sesx", "fcp", "premiere", "davinci_resolve", "aaf"])
+        assert.ok(d.includes(f), `description should list ${f}`);
+    for (const app of ["Reaper", "Audition", "Final Cut", "Premiere", "DaVinci Resolve", "Pro Tools", "Logic"])
+        assert.ok(d.includes(app), `description should name ${app}`);
+    for (const a of ["project_id", "composition_id", "format", "out", "markers", "track_per_file", "source_frame_rate", "strip_spaces", "callback_url", "no_wait"]) {
+        assert.ok(d.includes(a), `description should mention ${a}`);
+    }
+    assert.match(d, /24 hours/);
+});
+test("descript_timeline end to end - submits, polls, downloads and saves the file, then reports it as JSON", async () => {
+    const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join, resolve } = await import("node:path");
+    const { installMockFetchByUrl } = await import("../helpers/mockFetch.js");
+    const dir = mkdtempSync(join(tmpdir(), "descript-mcp-timeline-"));
+    const out = join(dir, "sub", "lesson.edl");
+    const storage = "https://storage.example.com/exports/timeline.edl?sig=abc";
+    const submit = { job_id: "jt", drive_id: "d", drive_name: "iDD", project_id: "p1", project_url: "u", format: "edl" };
+    const done = { job_id: "jt", job_type: "export/timeline", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p1", project_url: "u",
+        result: { status: "success", composition_id: "c9", file_name: "timeline.edl", content_type: "text/plain", download_url: storage, download_url_expires_at: "2026-10-01T03:00:00.000Z" } };
+    const { calls } = installMockFetchByUrl([
+        { match: "/jobs/export/timeline", responses: [{ status: 201, json: submit }] },
+        { match: "/jobs/jt", responses: [{ status: 200, json: done }] },
+        { match: "storage.example.com", responses: [{ status: 200, text: "TITLE: x\n" }] }
+    ]);
+    const prev = process.env.DESCRIPT_API_TOKEN;
+    process.env.DESCRIPT_API_TOKEN = "t";
+    try {
+        const r = await handleRpc({ jsonrpc: "2.0", id: 61, method: "tools/call", params: { name: "descript_timeline", arguments: { project_id: "p1", format: "edl", out, markers: false } } }, realExecutor);
+        assert.equal(r.result.isError, false, r.result.content[0].text);
+        const parsed = JSON.parse(r.result.content[0].text);
+        assert.equal(parsed.ok, true);
+        assert.equal(parsed.path, resolve(out));
+        assert.equal(parsed.compositionId, "c9");
+        assert.equal(readFileSync(out, "utf8"), "TITLE: x\n");
+        assert.equal(JSON.parse(calls[0].body).include_markers, false);
+        assert.equal(calls.find((c) => c.url.includes("storage.example.com")).headers["authorization"], undefined);
+    }
+    finally {
+        if (prev === undefined)
+            delete process.env.DESCRIPT_API_TOKEN;
+        else
+            process.env.DESCRIPT_API_TOKEN = prev;
+        restoreFetch();
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+test("descript_timeline surfaces a CLI validation failure as isError without calling the API", async () => {
+    const { calls } = installMockFetch([{ status: 201, json: { job_id: "jt" } }]);
+    const prev = process.env.DESCRIPT_API_TOKEN;
+    process.env.DESCRIPT_API_TOKEN = "t";
+    try {
+        const r = await handleRpc({ jsonrpc: "2.0", id: 62, method: "tools/call", params: { name: "descript_timeline", arguments: { project_id: "p1", format: "fcp", track_per_file: true } } }, realExecutor);
+        assert.equal(r.result.isError, true);
+        assert.match(r.result.content[0].text, /--track-per-file/);
         assert.equal(calls.length, 0);
     }
     finally {

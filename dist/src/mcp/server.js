@@ -54,6 +54,10 @@ function build(spec) {
                 throw new Error(`${spec.tool}: "${p.name}" cannot start with "--"`);
             out.push(text);
         }
+        for (const name of spec.required ?? []) {
+            if (absent(norm[name]))
+                throw new Error(`${spec.tool}: missing required argument "${name}"`);
+        }
         const flags = { ...(spec.defaults ?? {}) };
         for (const [key, v] of Object.entries(norm)) {
             if (positionals.some((p) => p.name === key) || key in special)
@@ -128,6 +132,15 @@ function listFlag(tool, arg) {
         return joined === "" ? [] : [`--${arg}=${joined}`];
     };
 }
+// descript_timeline's markers is tri-state: true asks for markers (--markers), false
+// asks for none (--no-markers), and leaving it out keeps the format's own default.
+function markersFlag(raw) {
+    if (raw === undefined || raw === null)
+        return [];
+    if (typeof raw !== "boolean")
+        throw new Error("descript_timeline: markers must be true or false (leave it out to use the format's default)");
+    return [raw ? "--markers" : "--no-markers"];
+}
 const STRICT = "Argument names may be snake_case or kebab-case. Unknown arguments are rejected, never ignored.";
 export const TOOLS = [
     { name: "descript_status", description: `Check Descript API auth and status. args: profile?. ${STRICT}`,
@@ -162,6 +175,11 @@ export const TOOLS = [
         argv: build({ tool: "descript_search", base: ["search"],
             positionals: [{ name: "query", required: true }],
             special: { type: listFlag("descript_search", "type"), match: listFlag("descript_search", "match"), owner: listFlag("descript_search", "owner") } }) },
+    { name: "descript_timeline", description: `Export a composition as a timeline file for another editor and save it locally. Creates no share page and spends no AI credits, so no confirmation is needed. Media is not bundled, the editor relinks to the user's own files. Waits for the export job, downloads the file and returns JSON with the saved path, size, file name and a download link that stays valid 24 hours. args: project_id, composition_id? (UUID, 5-character short id or project URL; default the first composition), format=edl|sesx|fcp|premiere|davinci_resolve|aaf (required; edl is a Samplitude EDL for Reaper and Samplitude, sesx is Adobe Audition, fcp is Final Cut Pro X (FCPXML 1.8), premiere is Premiere Pro XML, davinci_resolve is DaVinci Resolve XML, aaf is Pro Tools and Logic), out? (file path, or an existing folder to save into; missing parent folders are created; default ./<project_id>-<file name> in the working directory), markers? (true includes markers, false leaves them out, omit for the format's default), track_per_file? (not with fcp), source_frame_rate? (keeps the source frame rate, premiere and davinci_resolve only), strip_spaces? (aaf only, for Logic), callback_url?, no_wait? (submit only, no download; check the job with descript_jobs). ${STRICT}`,
+        argv: build({ tool: "descript_timeline", base: ["timeline"],
+            positionals: [{ name: "project_id", required: true }, { name: "composition_id" }],
+            required: ["format"],
+            special: { markers: markersFlag } }) },
 ];
 export const realExecutor = async (argv) => {
     let stdout = "";

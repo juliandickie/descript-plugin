@@ -4,6 +4,8 @@ export interface MockResponseSpec {
   status: number;
   json?: unknown;
   text?: string;
+  /** Raw response body, for binary downloads (a string body is always UTF-8 encoded). Wins over json and text. */
+  bytes?: Uint8Array;
   headers?: Record<string, string>;
 }
 
@@ -32,7 +34,7 @@ export function installMockFetch(sequence: MockResponseSpec[]): { calls: Recorde
     const respHeaders = new Headers(spec.headers ?? {});
     const bodyText = spec.json !== undefined ? JSON.stringify(spec.json) : (spec.text ?? "");
     const nullBodyStatuses = new Set([101, 204, 205, 304]);
-    const responseBody = nullBodyStatuses.has(spec.status) ? null : bodyText;
+    const responseBody = nullBodyStatuses.has(spec.status) ? null : (spec.bytes ? new Uint8Array(spec.bytes).buffer : bodyText);
     return new Response(responseBody, { status: spec.status, headers: respHeaders });
   });
   return { calls };
@@ -69,7 +71,7 @@ export function installMockFetchByUrl(
     const respHeaders = new Headers(spec.headers ?? {});
     const bodyText = spec.json !== undefined ? JSON.stringify(spec.json) : (spec.text ?? "");
     const nullBodyStatuses = new Set([101, 204, 205, 304]);
-    const responseBody = nullBodyStatuses.has(spec.status) ? null : bodyText;
+    const responseBody = nullBodyStatuses.has(spec.status) ? null : (spec.bytes ? new Uint8Array(spec.bytes).buffer : bodyText);
     return new Response(responseBody, { status: spec.status, headers: respHeaders });
   });
   return { calls };
