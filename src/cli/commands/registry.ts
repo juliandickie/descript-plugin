@@ -1,12 +1,12 @@
 import { DescriptClient } from "../../client/index.js";
 import { DescriptApiError, errorDetailMessages } from "../../client/errors.js";
 import { resolveCredentials } from "../../config/credentials.js";
-import { importAndWait, normalizeImportJob } from "../../workflows/importAndWait.js";
+import { importAndWait, normalizeImportJob, importDriveMediaAndWait, normalizeDriveImportJob, type ImportOutcome, type DriveImportOutcome } from "../../workflows/importAndWait.js";
 import { editAndWait } from "../../workflows/editAndWait.js";
 import { translateAndMap } from "../../workflows/translate.js";
 import { pollJob, type PollOptions } from "../../workflows/poll.js";
 import { publishAndWait } from "../../workflows/publishAndWait.js";
-import { directUpload, mediaRefForFile } from "../../workflows/upload.js";
+import { directUpload, mediaRefForFile, mediaRefForUrl, type DirectUploadParams } from "../../workflows/upload.js";
 import { parseManifest, planBatch, runBatch } from "../../workflows/batch.js";
 import { exportBatch, type ExportBatchItem, type ExportBatchReport, type ExportBatchReportItem } from "../../workflows/exportBatch.js";
 import type { ExportFormat } from "../../workflows/exportPublished.js";
@@ -15,7 +15,7 @@ import { sanitize } from "../../workflows/filenameSanitize.js";
 import { validateRequestedFormatsAgainstReport, reconstructResumeItems, buildResumeReport, type ResumeReport } from "../../workflows/exportResume.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AccessLevel, ImportRequest, EditInDescriptBody, JobType, ListJobsQuery, ListProjectsQuery, SearchMatch, SearchQuery, SearchSort, SearchType, TimelineExportRequest, TimelineFormat, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
+import type { AccessLevel, DriveMediaImportRequest, DriveImportSubmitResponse, ImportCompositionUpdate, ImportRequest, EditInDescriptBody, JobType, ListJobsQuery, ListProjectsQuery, SearchMatch, SearchQuery, SearchSort, SearchType, TimelineExportRequest, TimelineFormat, TranscriptExportRequest, TranscriptFormat, TranscriptTimecodeOptions } from "../../client/types.js";
 import type { IO } from "../output.js";
 import { emit, fail, progressReporter } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
@@ -76,7 +76,7 @@ const SPEAKER_LABELS = ["off", "changes", "every_paragraph"] as const;
 const SEARCH_TYPE = ["project", "video", "image", "audio", "project_folder", "media_library_folder", "layout_pack"] as const satisfies readonly SearchType[];
 const SEARCH_MATCH = ["name", "content"] as const satisfies readonly SearchMatch[];
 const SEARCH_SORT = ["relevance", "newest", "oldest"] as const satisfies readonly SearchSort[];
-const USER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEARCH_USAGE = "Usage: descript search <query words...> [--type a,b] [--match name,content] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]";
 
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
@@ -193,7 +193,7 @@ function parseOwners(ctx: Ctx, raw: string | boolean | undefined): string[] | un
     fail(ctx.io, "--owner must include at least one user UUID (comma-separated for more than one)");
     return null;
   }
-  const bad = items.find((i) => !USER_UUID.test(i));
+  const bad = items.find((i) => !UUID_PATTERN.test(i));
   if (bad !== undefined) {
     fail(ctx.io, `--owner must be a comma-separated list of user UUIDs (got "${bad}")`);
     return null;
@@ -238,7 +238,7 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
   transcript: ["format", "out", "speaker-labels", "markers", ...TIMECODE_FLAGS],
   translate: ["language", "model", "no-wait"],
   config: ["editor"],
-  import: ["url", "file", "media", "name", "folder", "language", "project-id", "workspace", "compositions", "content-type", "team-access", "callback-url", "no-wait"],
+  import: ["url", "file", "media", "name", "folder", "language", "project-id", "workspace", "compositions", "content-type", "team-access", "callback-url", "no-wait", "library", "folder-id", "composition-id", "update-compositions"],
   agent: ["prompt", "project-id", "project-name", "composition-id", "model", "team-access", "callback-url", "no-wait"],
   publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "drive-default-access", "callback-url", "no-wait"],
   jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
@@ -256,6 +256,99 @@ export const COMMAND_FLAGS: Record<string, readonly string[]> = {
 export function unknownFlags(command: string, flags: Record<string, unknown>): string[] {
   const allowed = COMMAND_FLAGS[command] ?? [];
   return Object.keys(flags).filter((f) => !GLOBAL_FLAGS.includes(f) && !allowed.includes(f));
+}
+
+// A value flag that came without a value parses as `true`. Refuse it rather than drop it
+// (a dropped --composition-id would import the file without appending it anywhere).
+// Returns true after emitting the usage error.
+function missingValue(ctx: Ctx, flag: string): boolean {
+  const v = ctx.flags[flag];
+  if (v === undefined || (typeof v === "string" && v.trim() !== "")) return false;
+  fail(ctx.io, `--${flag} needs a value`);
+  return true;
+}
+
+// Every import that lands in a project: a request to submit, or a file to upload first.
+// `appendedTo` names the compositions the imported clips were appended to, for the human line.
+type ProjectImportPlan = { req: ImportRequest } | { upload: DirectUploadParams };
+async function runProjectImport(ctx: Ctx, c: DescriptClient, plan: ProjectImportPlan, appendedTo: readonly string[] = []): Promise<number> {
+  let out: ImportOutcome;
+  if ("upload" in plan) {
+    const submit = await directUpload(c, plan.upload);
+    if (noWait(ctx)) { emit(ctx.io, `Submitted import job ${submit.job_id}`, submit); return 0; }
+    const final = await pollJob((id) => c.getJob(id), submit.job_id, pollOptions(ctx));
+    out = normalizeImportJob(submit, final);
+  } else {
+    if (noWait(ctx)) { const s = await c.importProjectMedia(plan.req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
+    out = await importAndWait(c, plan.req, pollOptions(ctx));
+  }
+  const appended = appendedTo.length > 0 ? ` and appended to composition${appendedTo.length > 1 ? "s" : ""} ${appendedTo.join(", ")}` : "";
+  emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}${appended}` : `Import failed: ${out.error}`, out);
+  return out.ok ? 0 : 4;
+}
+
+// Flags that only make sense when a new or existing PROJECT is the destination.
+const LIBRARY_CONFLICTS = ["name", "project-id", "workspace", "team-access", "folder", "compositions", "composition-id", "update-compositions"] as const;
+
+// import --library: files go into the Drive's shared media library (POST /jobs/import/drive_media),
+// not a project. Everything here is a usage error before the first API call.
+async function importIntoLibrary(ctx: Ctx, c: DescriptClient, o: { url?: string; file?: string; media?: string; language?: string; callbackUrl?: string }): Promise<number> {
+  const conflicts = LIBRARY_CONFLICTS.filter((f) => ctx.flags[f] !== undefined);
+  if (conflicts.length > 0) {
+    fail(ctx.io, `--library cannot be combined with ${conflicts.map((f) => `--${f}`).join(", ")}: it imports into the Drive's shared media library, not a project. Drop --library to import into a project.`);
+    return 2;
+  }
+  const folderIdFlag = ctx.flags["folder-id"];
+  const folderId = typeof folderIdFlag === "string" ? folderIdFlag.trim() : undefined;
+  if (folderId !== undefined && !UUID_PATTERN.test(folderId)) {
+    fail(ctx.io, `--folder-id must be a UUID (got "${folderId}"). Find a media library folder's id with: descript search --type media_library_folder <name>`);
+    return 2;
+  }
+  const given = [o.url, o.file, o.media].filter((v) => v !== undefined).length;
+  if (given === 0) { fail(ctx.io, "Provide --url, --file or --media <json> with --library"); return 2; }
+  if (given > 1) { fail(ctx.io, "Give only one of --url, --file or --media with --library"); return 2; }
+
+  let addMedia: DriveMediaImportRequest["add_media"] | undefined;
+  if (o.media !== undefined) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(o.media); } catch { parsed = undefined; }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) { fail(ctx.io, "--media must be valid JSON (an add_media map)"); return 2; }
+    const sequence = Object.entries(parsed).find(([, item]) => typeof item === "object" && item !== null && "tracks" in item);
+    if (sequence) {
+      fail(ctx.io, `--media entry "${sequence[0]}" uses tracks (a sequence), and the drive media library does not accept sequences. Import it into a project instead (drop --library).`);
+      return 2;
+    }
+    addMedia = parsed as DriveMediaImportRequest["add_media"];
+  }
+
+  const shared = { ...(folderId ? { folder_id: folderId } : {}), ...(o.callbackUrl ? { callback_url: o.callbackUrl } : {}) };
+  let outcome: DriveImportOutcome;
+  let count = 1;
+  if (o.file !== undefined) {
+    const request: DriveMediaImportRequest = { add_media: {}, ...shared };
+    const submit: DriveImportSubmitResponse = await directUpload(c, {
+      mediaRef: mediaRefForFile(o.file),
+      filePath: o.file,
+      contentType: typeof ctx.flags["content-type"] === "string" ? ctx.flags["content-type"] : "video/mp4",
+      ...(o.language ? { language: o.language } : {}),
+      request
+    }, (r) => c.importDriveMedia(r));
+    if (noWait(ctx)) { emit(ctx.io, `Submitted library import job ${submit.job_id}`, submit); return 0; }
+    const final = await pollJob((id) => c.getJob(id), submit.job_id, pollOptions(ctx));
+    outcome = normalizeDriveImportJob(submit, final);
+  } else {
+    if (addMedia === undefined) addMedia = { [mediaRefForUrl(o.url!)]: o.language ? { url: o.url!, language: o.language } : { url: o.url! } };
+    count = Object.keys(addMedia).length;
+    const req: DriveMediaImportRequest = { add_media: addMedia, ...shared };
+    if (noWait(ctx)) { const s = await c.importDriveMedia(req); emit(ctx.io, `Submitted library import job ${s.job_id}`, s); return 0; }
+    outcome = await importDriveMediaAndWait(c, req, pollOptions(ctx));
+  }
+  emit(
+    ctx.io,
+    outcome.ok ? `Imported ${count} file(s) into the drive media library${folderId ? ` (folder ${folderId})` : ""}` : `Library import failed: ${outcome.error}`,
+    outcome
+  );
+  return outcome.ok ? 0 : 4;
 }
 
 export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
@@ -395,21 +488,82 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
     const file = typeof ctx.flags.file === "string" ? ctx.flags.file : undefined;
     const url = typeof ctx.flags.url === "string" ? ctx.flags.url : undefined;
 
+    // A switch takes no value, and parseArgv would read `--library <word>` as one, which would
+    // quietly import into a project instead of the library.
+    const library = ctx.flags["library"];
+    if (library !== undefined && library !== true) {
+      fail(ctx.io, `--library is a switch and takes no value (got "${String(library)}"). Put it after the other options, or drop the extra word.`);
+      return 2;
+    }
+    for (const flag of ["folder-id", "composition-id", "update-compositions"]) if (missingValue(ctx, flag)) return 2;
+    const folderId = ctx.flags["folder-id"];
+    const compositionId = typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"].trim() : undefined;
+    const updateJson = typeof ctx.flags["update-compositions"] === "string" ? ctx.flags["update-compositions"] : undefined;
+
+    if (library === true) return importIntoLibrary(ctx, c, { url, file, media: mediaJson, language, callbackUrl });
+    if (folderId !== undefined) {
+      fail(ctx.io, "--folder-id only applies with --library (it names a media library folder; use --folder for a project folder)");
+      return 2;
+    }
+    if (compositionId !== undefined && !projectId) {
+      fail(ctx.io, "--composition-id needs --project-id (it appends the imported clip to a composition of an existing project)");
+      return 2;
+    }
+    if (updateJson !== undefined && !projectId) {
+      fail(ctx.io, "--update-compositions needs --project-id (it appends clips to compositions of an existing project)");
+      return 2;
+    }
+    if (compositionId !== undefined && updateJson !== undefined) {
+      fail(ctx.io, "--composition-id and --update-compositions cannot be combined (use --composition-id with --url or --file, or --update-compositions with --media)");
+      return 2;
+    }
+
     if (projectId) {
-      // Importing into an existing project: no project_name, no add_compositions.
-      if (!mediaJson && !url) { fail(ctx.io, "Provide --url or --media <json> when using --project-id"); return 2; }
-      let addMedia: ImportRequest["add_media"];
-      if (mediaJson) {
-        try { addMedia = JSON.parse(mediaJson); } catch { fail(ctx.io, "--media must be valid JSON (an add_media map)"); return 2; }
-      } else {
-        const mediaItem: ImportRequest["add_media"][string] = language ? { url: url!, language } : { url: url! };
-        addMedia = { "media.0": mediaItem };
+      // Importing into an existing project: no project_name, no add_compositions. The clips can be
+      // appended to an existing composition through update_compositions.
+      const given = [url, file, mediaJson].filter((v) => v !== undefined).length;
+      if (given === 0) { fail(ctx.io, "Provide --url or --media <json> (or --file <path>) when using --project-id"); return 2; }
+      if (given > 1) { fail(ctx.io, "Give only one of --url, --file or --media with --project-id"); return 2; }
+      if (compositionId !== undefined && mediaJson !== undefined) {
+        fail(ctx.io, "--composition-id works with --url or --file, not --media (name the composition inside --update-compositions instead)");
+        return 2;
       }
-      const req: ImportRequest = { project_id: projectId, add_media: addMedia, ...extra };
-      if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-      const out = await importAndWait(c, req, pollOptions(ctx));
-      emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
-      return out.ok ? 0 : 4;
+      if (updateJson !== undefined && mediaJson === undefined) {
+        fail(ctx.io, "--update-compositions works with --media only (use --composition-id with --url or --file)");
+        return 2;
+      }
+      let updates: ImportCompositionUpdate[] | undefined;
+      if (updateJson !== undefined) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(updateJson); } catch { parsed = undefined; }
+        if (!Array.isArray(parsed)) { fail(ctx.io, "--update-compositions must be valid JSON (an array of { composition_id, append_clips })"); return 2; }
+        updates = parsed as ImportCompositionUpdate[];
+      }
+      const appendTo = (ref: string): { update_compositions?: ImportCompositionUpdate[] } =>
+        compositionId !== undefined ? { update_compositions: [{ composition_id: compositionId, append_clips: [{ media: ref }] }] } : {};
+      const appendedTo = updates
+        ? [...new Set(updates.flatMap((u) => (typeof u?.composition_id === "string" ? [u.composition_id] : [])))]
+        : compositionId !== undefined ? [compositionId] : [];
+
+      if (mediaJson !== undefined) {
+        let addMedia: ImportRequest["add_media"];
+        try { addMedia = JSON.parse(mediaJson); } catch { fail(ctx.io, "--media must be valid JSON (an add_media map)"); return 2; }
+        return runProjectImport(ctx, c, { req: { project_id: projectId, add_media: addMedia, ...(updates ? { update_compositions: updates } : {}), ...extra } }, appendedTo);
+      }
+      if (file !== undefined) {
+        const mediaRef = mediaRefForFile(file);
+        return runProjectImport(ctx, c, { upload: {
+          mediaRef,
+          filePath: file,
+          contentType: typeof ctx.flags["content-type"] === "string" ? ctx.flags["content-type"] : "video/mp4",
+          language,
+          request: { project_id: projectId, add_media: {}, ...appendTo(mediaRef), ...extra }
+        } }, appendedTo);
+      }
+      // Each URL import gets its own reference, so a second URL import into the same project does not collide.
+      const mediaRef = mediaRefForUrl(url!);
+      const mediaItem: ImportRequest["add_media"][string] = language ? { url: url!, language } : { url: url! };
+      return runProjectImport(ctx, c, { req: { project_id: projectId, add_media: { [mediaRef]: mediaItem }, ...appendTo(mediaRef), ...extra } }, appendedTo);
     }
 
     if (mediaJson) {
@@ -419,36 +573,23 @@ export const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
       if (typeof ctx.flags.compositions === "string") {
         try { addCompositions = JSON.parse(ctx.flags.compositions); } catch { fail(ctx.io, "--compositions must be valid JSON (an array)"); return 2; }
       }
-      const req: ImportRequest = { project_name: name, add_media: addMedia, ...(addCompositions ? { add_compositions: addCompositions } : {}), ...extra };
-      if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-      const out = await importAndWait(c, req, pollOptions(ctx));
-      emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
-      return out.ok ? 0 : 4;
+      return runProjectImport(ctx, c, { req: { project_name: name, add_media: addMedia, ...(addCompositions ? { add_compositions: addCompositions } : {}), ...extra } });
     }
 
     if (!file && !url) { fail(ctx.io, "Provide --url, --file, or --media <json>"); return 2; }
 
     if (file) {
       const mediaRef = mediaRefForFile(file);
-      const submit = await directUpload(c, {
+      return runProjectImport(ctx, c, { upload: {
         mediaRef,
         filePath: file,
         contentType: typeof ctx.flags["content-type"] === "string" ? ctx.flags["content-type"] : "video/mp4",
         language,
         request: { project_name: name, add_media: {}, add_compositions: [{ name, clips: [{ media: mediaRef }] }], ...extra }
-      });
-      if (noWait(ctx)) { emit(ctx.io, `Submitted import job ${submit.job_id}`, submit); return 0; }
-      const final = await pollJob((id) => c.getJob(id), submit.job_id, pollOptions(ctx));
-      const out = normalizeImportJob(submit, final);
-      emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
-      return out.ok ? 0 : 4;
+      } });
     }
     const urlMediaItem: ImportRequest["add_media"][string] = language ? { url: url!, language } : { url: url! };
-    const req: ImportRequest = { project_name: name, add_media: { "media.0": urlMediaItem }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra };
-    if (noWait(ctx)) { const s = await c.importProjectMedia(req); emit(ctx.io, `Submitted ${s.job_id}`, s); return 0; }
-    const out = await importAndWait(c, req, pollOptions(ctx));
-    emit(ctx.io, out.ok ? `Imported into ${out.projectUrl}` : `Import failed: ${out.error}`, out);
-    return out.ok ? 0 : 4;
+    return runProjectImport(ctx, c, { req: { project_name: name, add_media: { "media.0": urlMediaItem }, add_compositions: [{ name, clips: [{ media: "media.0" }] }], ...extra } });
   },
 
   async agent(ctx) {

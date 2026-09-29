@@ -2,14 +2,19 @@ import { statSync, createReadStream } from "node:fs";
 import { basename } from "node:path";
 import { Readable } from "node:stream";
 import type { DescriptClient } from "../client/index.js";
-import type { ImportRequest, SubmitJobResponse } from "../client/types.js";
+import type { ImportMediaItem, ImportRequest, SubmitJobResponse, UploadSubmitResponse } from "../client/types.js";
 
-export interface DirectUploadParams {
+/** A request whose `add_media` map the upload adds its own entry to (the project import and the drive media library import). */
+export interface AddMediaRequest {
+  add_media: Record<string, ImportMediaItem>;
+}
+
+export interface DirectUploadParams<R extends AddMediaRequest = ImportRequest> {
   mediaRef: string;
   filePath: string;
   contentType: string;
   language?: string;
-  request: ImportRequest;
+  request: R;
 }
 
 // Descript infers the media type from the reference, so it must keep the file's
@@ -18,13 +23,46 @@ export function mediaRefForFile(filePath: string): string {
   return basename(filePath).replace(/[^A-Za-z0-9._-]+/g, "-");
 }
 
+// The same rule for a URL import: the reference is the last path segment of the URL
+// (percent-decoded, query string and fragment ignored), because Descript reads the
+// media type from its extension. A segment with no extension of 1 to 5 letters or
+// digits, a trailing slash, or a URL that does not parse gives the generic "media.0".
+export function mediaRefForUrl(url: string): string {
+  let segment: string;
+  try {
+    segment = new URL(url).pathname.split("/").pop() ?? "";
+  } catch {
+    return "media.0";
+  }
+  try {
+    segment = decodeURIComponent(segment);
+  } catch {
+    // A malformed escape (a lone "%") is sanitised as it stands.
+  }
+  const ref = segment.replace(/[^A-Za-z0-9._-]+/g, "-");
+  return /\.[A-Za-z0-9]{1,5}$/.test(ref) ? ref : "media.0";
+}
+
+/**
+ * Registers one file with an import job, then PUTs its bytes to the signed URL the API
+ * returns. The request is submitted through `client.importProjectMedia` unless a
+ * `submit` function is given (the drive media library import passes
+ * `client.importDriveMedia`). Returns the submit response, and does not poll.
+ */
+export function directUpload(client: DescriptClient, params: DirectUploadParams): Promise<SubmitJobResponse>;
+export function directUpload<R extends AddMediaRequest, S extends UploadSubmitResponse>(
+  client: DescriptClient,
+  params: DirectUploadParams<R>,
+  submit: (request: R) => Promise<S>
+): Promise<S>;
 export async function directUpload(
   client: DescriptClient,
-  params: DirectUploadParams
-): Promise<SubmitJobResponse> {
+  params: DirectUploadParams<AddMediaRequest>,
+  submit: (request: AddMediaRequest) => Promise<UploadSubmitResponse> = (request) => client.importProjectMedia(request as ImportRequest)
+): Promise<UploadSubmitResponse> {
   const size = statSync(params.filePath).size;
 
-  const request: ImportRequest = {
+  const request = {
     ...params.request,
     add_media: {
       ...params.request.add_media,
@@ -36,8 +74,8 @@ export async function directUpload(
     }
   };
 
-  const submit = await client.importProjectMedia(request);
-  const entry = submit.upload_urls?.[params.mediaRef];
+  const sent = await submit(request);
+  const entry = sent.upload_urls?.[params.mediaRef];
   if (!entry) {
     throw new Error(
       `Import job created but the API returned no signed upload URL for "${params.mediaRef}".`
@@ -62,5 +100,5 @@ export async function directUpload(
     stream.destroy();
     throw new Error(`Signed upload PUT failed with HTTP ${resp.status} for "${params.mediaRef}".`);
   }
-  return submit;
+  return sent;
 }

@@ -1,9 +1,8 @@
 export type JobState = "queued" | "running" | "stopped" | "cancelled";
 /**
  * Every job type GET /jobs accepts as its `type` filter (live-verified 2026-09-30).
- * JobStatus below models the four types this plugin submits and polls (import,
- * agent, publish, export/timeline); a `jobs list --type import/drive_media`
- * response still comes back as JSON, it just is not narrowed by the union.
+ * JobStatus below models all five: the project import, the drive media library
+ * import, agent, publish and export/timeline.
  */
 export type JobType = "import/project_media" | "import/drive_media" | "agent" | "publish" | "export/timeline";
 
@@ -43,6 +42,16 @@ export interface ImportComposition {
   clips?: Array<{ media: string }>;
 }
 
+/**
+ * Appends clips to the end of an EXISTING composition (live-validated 2026-09-30, not in
+ * the public spec). `composition_id` takes a UUID, a 5-character short id or a full
+ * project URL. Each `media` names a key of the same request's `add_media`.
+ */
+export interface ImportCompositionUpdate {
+  composition_id: string;
+  append_clips: Array<{ media: string; mute?: boolean }>;
+}
+
 export interface ImportRequest {
   project_id?: string;
   project_name?: string;
@@ -51,6 +60,20 @@ export interface ImportRequest {
   folder_name?: string;
   add_media: Record<string, ImportMediaItem>;
   add_compositions?: ImportComposition[];
+  /** Needs `project_id` (the API answers 400 "missing required peer project_id" otherwise) and at least one clip. */
+  update_compositions?: ImportCompositionUpdate[];
+  callback_url?: string;
+}
+
+/**
+ * POST /jobs/import/drive_media (live-validated 2026-09-30, not in the public spec):
+ * imports into the Drive's shared media library instead of a project. Entries take a
+ * `url`, or `content_type` plus `file_size` for a direct upload; sequences (`tracks`)
+ * are rejected. `folder_id` must be a UUID (a `media_library_folder` search result).
+ */
+export interface DriveMediaImportRequest {
+  add_media: Record<string, UrlImportItem | DirectUploadItem>;
+  folder_id?: string;
   callback_url?: string;
 }
 
@@ -90,6 +113,21 @@ export interface SubmitJobResponse {
   resolved_model?: string;
 }
 
+/**
+ * What a direct upload needs from any import submit response, so `directUpload` can serve
+ * the project import and the drive media library import.
+ */
+export interface UploadSubmitResponse {
+  job_id: string;
+  upload_urls?: Record<string, UploadUrlEntry>;
+}
+
+/** Submit response of the drive media library import. It belongs to no project, so it has no project fields. */
+export interface DriveImportSubmitResponse extends UploadSubmitResponse {
+  drive_id: string;
+  drive_name?: string;
+}
+
 export interface ImportSuccessResult {
   status: "success" | "partial";
   media_status: Record<string, { status: "success" | "failed"; duration_seconds?: number; error_message?: string }>;
@@ -99,6 +137,18 @@ export interface ImportSuccessResult {
 export interface ImportErrorResult {
   status: "error";
   error_message: string;
+  error_code?: string;
+}
+/**
+ * Result of an import/drive_media job. The shape has never been observed live, so every
+ * field is optional and `status` is any string; callers read `status === "success"` and
+ * report whatever `media_status` and error fields are present.
+ */
+export interface DriveImportResult {
+  status?: string;
+  media_status?: Record<string, { status?: string; duration_seconds?: number; error_message?: string }>;
+  media_seconds_used?: number;
+  error_message?: string;
   error_code?: string;
 }
 export interface AgentSuccessResult {
@@ -170,6 +220,13 @@ export interface ImportJobStatus extends JobStatusBase {
   job_type: "import/project_media";
   result?: ImportSuccessResult | ImportErrorResult;
 }
+/** A library import belongs to no project, so its project fields are optional here. */
+export interface DriveImportJobStatus extends Omit<JobStatusBase, "project_id" | "project_url"> {
+  job_type: "import/drive_media";
+  project_id?: string;
+  project_url?: string;
+  result?: DriveImportResult;
+}
 export interface AgentJobStatus extends JobStatusBase {
   job_type: "agent";
   result?: AgentSuccessResult | AgentErrorResult;
@@ -182,7 +239,7 @@ export interface TimelineExportJobStatus extends JobStatusBase {
   job_type: "export/timeline";
   result?: TimelineExportSuccessResult | TimelineExportErrorResult;
 }
-export type JobStatus = ImportJobStatus | AgentJobStatus | PublishJobStatus | TimelineExportJobStatus;
+export type JobStatus = ImportJobStatus | DriveImportJobStatus | AgentJobStatus | PublishJobStatus | TimelineExportJobStatus;
 
 export interface Pagination {
   next_cursor?: string;

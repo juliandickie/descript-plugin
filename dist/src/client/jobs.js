@@ -1,6 +1,11 @@
 export function importProjectMedia(http, req) {
     return http.request("POST", "/jobs/import/project_media", { body: req });
 }
+// Imports into the Drive's shared media library instead of a project. Live but not in
+// the public spec (validated 2026-09-30).
+export function importDriveMedia(http, req) {
+    return http.request("POST", "/jobs/import/drive_media", { body: req });
+}
 export function agentEditJob(http, req) {
     return http.request("POST", "/jobs/agent", { body: req });
 }

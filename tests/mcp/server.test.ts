@@ -188,6 +188,42 @@ test("descript_import serialises object arguments as JSON and drops false boolea
     ["agent", "--project-id=p1", "--prompt=cut silences", "--no-wait", "--json"]);
 });
 
+test("descript_import forwards library, folder_id, composition_id and update_compositions to the CLI flags", () => {
+  assert.deepEqual(
+    argvOf("descript_import", { library: true, url: "https://x.test/a.mp4", folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", language: "es", no_wait: true }),
+    ["import", "--library", "--url=https://x.test/a.mp4", "--folder-id=3fa85f64-5717-4562-b3fc-2c963f66afa6", "--language=es", "--no-wait", "--json"]
+  );
+  assert.deepEqual(
+    argvOf("descript_import", { project_id: "p1", composition_id: "b65d1", file: "/tmp/clip.mp4" }),
+    ["import", "--project-id=p1", "--composition-id=b65d1", "--file=/tmp/clip.mp4", "--json"]
+  );
+  const update = [{ composition_id: "b65d1", append_clips: [{ media: "a.mp4", mute: true }] }];
+  assert.deepEqual(
+    argvOf("descript_import", { project_id: "p1", media: JSON.stringify({ "a.mp4": { url: "https://x.test/a.mp4" } }), update_compositions: update }),
+    ["import", "--project-id=p1", "--media={\"a.mp4\":{\"url\":\"https://x.test/a.mp4\"}}", `--update-compositions=${JSON.stringify(update)}`, "--json"]
+  );
+  assert.deepEqual(
+    argvOf("descript_import", { "folder-id": "f", "composition-id": "c", "update-compositions": [], library: false }),
+    ["import", "--folder-id=f", "--composition-id=c", "--update-compositions=[]", "--json"]
+  );
+});
+
+test("descript_import still rejects arguments it does not read", () => {
+  assert.throws(() => argvOf("descript_import", { library: true, folder_ids: "x" }), /Unknown argument "folder_ids"/);
+  assert.throws(() => argvOf("descript_import", { url: "u", composition: "b65d1" }), /Unknown argument "composition"/);
+  assert.throws(() => argvOf("descript_import", { url: "u", append_clips: [] }), /Unknown argument "append_clips"/);
+});
+
+test("descript_import describes library imports and appending to a composition", () => {
+  const d = TOOLS.find((t) => t.name === "descript_import")!.description;
+  assert.match(d, /library\?/);
+  assert.match(d, /folder_id\?/);
+  assert.match(d, /composition_id\?/);
+  assert.match(d, /update_compositions\?/);
+  assert.match(d, /shared Drive media library/);
+  assert.match(d, /appends? .*composition/i);
+});
+
 test("descript_publish lists all four access levels and descript_jobs all five job types", () => {
   const publish = TOOLS.find((t) => t.name === "descript_publish")!.description;
   assert.match(publish, /access_level\?=private\|drive\|unlisted\|public/);
@@ -238,6 +274,9 @@ test("every argv a tool can build is accepted by the CLI flag table", async () =
   const { parseArgv } = await import("../../src/cli/index.js");
   const samples: Array<[string, Record<string, unknown>]> = [
     ["descript_import", { url: "u", file: "f", media: "{}", name: "n", folder: "f", language: "en", project_id: "p", workspace: "w", compositions: [], content_type: "video/mp4", team_access: "view", callback_url: "c", no_wait: true, profile: "x" }],
+    ["descript_import", { library: true, url: "u", folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", language: "en", callback_url: "c", no_wait: true }],
+    ["descript_import", { project_id: "p", composition_id: "c", file: "f", content_type: "video/mp4" }],
+    ["descript_import", { project_id: "p", media: "{}", update_compositions: [{ composition_id: "c", append_clips: [{ media: "a.mp4" }] }] }],
     ["descript_agent", { prompt: "x", project_id: "p", project_name: "n", composition_id: "c", model: "m", team_access: "view", callback_url: "c", no_wait: true }],
     ["descript_publish", { project_id: "p", composition_id: "c", media_type: "Video", resolution: "1080p", access_level: "private", callback_url: "c", no_wait: true }],
     ["descript_transcript", { project_id: "p", format: "srt", out: "o", speaker_labels: "off", markers: true, timecodes: { on_paragraphs: true, on_speakers: true, on_markers: true, frequency_seconds: 5, offset_seconds: -1 } }],
@@ -272,6 +311,68 @@ test("descript_publish end to end - no access_level means private in the API req
     const body = JSON.parse(calls[0]!.body as string);
     assert.equal(body.access_level, "private");
     assert.equal(body.composition_id, "c1");
+  } finally {
+    if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
+    restoreFetch();
+  }
+});
+
+test("descript_import end to end - library and composition_id reach the API request bodies", async () => {
+  const prev = process.env.DESCRIPT_API_TOKEN;
+  process.env.DESCRIPT_API_TOKEN = "t";
+  try {
+    const lib = installMockFetch([{ status: 201, json: { job_id: "j1", drive_id: "d" } }]);
+    const r1 = await handleRpc(
+      { jsonrpc: "2.0", id: 42, method: "tools/call", params: { name: "descript_import", arguments: {
+        library: true, url: "https://x.test/a/clip.mp4", folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", no_wait: true } } },
+      realExecutor
+    );
+    assert.equal(r1!.result.isError, false, r1!.result.content[0].text);
+    assert.equal(lib.calls[0]!.url, "https://descriptapi.com/v1/jobs/import/drive_media");
+    assert.deepEqual(JSON.parse(lib.calls[0]!.body as string), { add_media: { "clip.mp4": { url: "https://x.test/a/clip.mp4" } }, folder_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" });
+    restoreFetch();
+
+    const app = installMockFetch([{ status: 201, json: { job_id: "j2", drive_id: "d", project_id: "p1", project_url: "u" } }]);
+    const r2 = await handleRpc(
+      { jsonrpc: "2.0", id: 43, method: "tools/call", params: { name: "descript_import", arguments: {
+        project_id: "p1", composition_id: "b65d1", url: "https://x.test/outro.mp4", no_wait: true } } },
+      realExecutor
+    );
+    assert.equal(r2!.result.isError, false, r2!.result.content[0].text);
+    assert.deepEqual(JSON.parse(app.calls[0]!.body as string), {
+      project_id: "p1",
+      add_media: { "outro.mp4": { url: "https://x.test/outro.mp4" } },
+      update_compositions: [{ composition_id: "b65d1", append_clips: [{ media: "outro.mp4" }] }]
+    });
+    restoreFetch();
+
+    const raw = installMockFetch([{ status: 201, json: { job_id: "j3", drive_id: "d", project_id: "p1", project_url: "u" } }]);
+    const update = [{ composition_id: "b65d1", append_clips: [{ media: "a.mp4", mute: true }] }];
+    const r3 = await handleRpc(
+      { jsonrpc: "2.0", id: 44, method: "tools/call", params: { name: "descript_import", arguments: {
+        project_id: "p1", media: JSON.stringify({ "a.mp4": { url: "https://x.test/a.mp4" } }), update_compositions: update, no_wait: true } } },
+      realExecutor
+    );
+    assert.equal(r3!.result.isError, false, r3!.result.content[0].text);
+    assert.deepEqual(JSON.parse(raw.calls[0]!.body as string).update_compositions, update);
+  } finally {
+    if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
+    restoreFetch();
+  }
+});
+
+test("descript_import through the MCP shim reports a library usage error as isError without calling the API", async () => {
+  const { calls } = installMockFetch([{ status: 201, json: { job_id: "j", drive_id: "d" } }]);
+  const prev = process.env.DESCRIPT_API_TOKEN;
+  process.env.DESCRIPT_API_TOKEN = "t";
+  try {
+    const r = await handleRpc(
+      { jsonrpc: "2.0", id: 45, method: "tools/call", params: { name: "descript_import", arguments: { library: true, url: "https://x.test/a.mp4", project_id: "p1" } } },
+      realExecutor
+    );
+    assert.equal(r!.result.isError, true);
+    assert.match(r!.result.content[0].text, /--library cannot be combined with --project-id/);
+    assert.equal(calls.length, 0);
   } finally {
     if (prev === undefined) delete process.env.DESCRIPT_API_TOKEN; else process.env.DESCRIPT_API_TOKEN = prev;
     restoreFetch();
