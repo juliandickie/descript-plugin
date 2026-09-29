@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.7.2 - 2026-09-29
+
+Local file uploads work again, through both `descript import --file` and the MCP `descript_import` tool with `file`.
 
 - **Fixed - `descript import --file` failed for every local file.** The upload was registered under the media reference `upload.media`, which has no file extension. Descript infers the media type from the reference, so each import stopped with "Uploaded file has invalid or unsupported media content" and left an empty project behind (seen 2026-09-29 with M4A, MP3 and WAV). The reference is now the file's basename with its extension kept and characters outside `A-Z a-z 0-9 . _ -` replaced by `-` (for example `L1-02 - Crowns.m4a` becomes `L1-02---Crowns.m4a`), and the composition clip uses the same reference.
 - **Fixed - `--language` was ignored for `--file` uploads.** The skill documented it, but the CLI never passed it through. It is now set on the uploaded media item, as it already was for `--url` imports.
