@@ -17,6 +17,7 @@ import { dirname, join } from "node:path";
 import { emit, fail, progressReporter } from "../output.js";
 import { configSet, configList, configEdit } from "./config.js";
 import { formatStatus } from "./status.js";
+import { formatSearch } from "./search.js";
 function client(ctx) {
     const creds = resolveCredentials({
         flagToken: typeof ctx.flags.token === "string" ? ctx.flags.token : undefined,
@@ -56,6 +57,11 @@ const PROJECT_SORT = ["name", "created_at", "updated_at", "last_viewed_at"];
 const PROJECT_DIRECTION = ["asc", "desc"];
 const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"];
 const SPEAKER_LABELS = ["off", "changes", "every_paragraph"];
+const SEARCH_TYPE = ["project", "video", "image", "audio", "project_folder", "media_library_folder", "layout_pack"];
+const SEARCH_MATCH = ["name", "content"];
+const SEARCH_SORT = ["relevance", "newest", "oldest"];
+const USER_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SEARCH_USAGE = "Usage: descript search <query words...> [--type a,b] [--match name,content] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]";
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx, flag, allowed) {
     const v = ctx.flags[flag];
@@ -151,6 +157,66 @@ function parseConcurrency(ctx, raw, fallback) {
     }
     return n;
 }
+// Splits a comma-separated list flag: trimmed, empty pieces dropped, duplicates
+// removed in order. A flag given without a value (parsed as true) yields no items.
+function splitList(raw) {
+    return typeof raw === "string" ? [...new Set(raw.split(",").map((s) => s.trim()).filter(Boolean))] : [];
+}
+// A comma-separated list flag whose every element must be one of `allowed`.
+// Returns undefined when the flag is absent, null after emitting a usage error.
+function parseEnumList(ctx, flag, raw, allowed) {
+    if (raw === undefined)
+        return undefined;
+    const items = splitList(raw);
+    if (items.length === 0) {
+        fail(ctx.io, `--${flag} must include at least one of: ${allowed.join(", ")}`);
+        return null;
+    }
+    const bad = items.find((i) => !allowed.includes(i));
+    if (bad !== undefined) {
+        fail(ctx.io, `--${flag} must be a comma-separated subset of: ${allowed.join(", ")} (got "${bad}")`);
+        return null;
+    }
+    return items;
+}
+// --owner: a comma-separated list of user UUIDs (the API takes no other form).
+function parseOwners(ctx, raw) {
+    if (raw === undefined)
+        return undefined;
+    const items = splitList(raw);
+    if (items.length === 0) {
+        fail(ctx.io, "--owner must include at least one user UUID (comma-separated for more than one)");
+        return null;
+    }
+    const bad = items.find((i) => !USER_UUID.test(i));
+    if (bad !== undefined) {
+        fail(ctx.io, `--owner must be a comma-separated list of user UUIDs (got "${bad}")`);
+        return null;
+    }
+    return items;
+}
+// --limit: an integer from 1 to 100. Returns undefined when absent, null after a usage error.
+function parseLimit(ctx, raw) {
+    if (raw === undefined)
+        return undefined;
+    const n = typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > 100) {
+        fail(ctx.io, "--limit must be an integer between 1 and 100");
+        return null;
+    }
+    return n;
+}
+// A date or timestamp flag. The API parses it (ISO 8601 date or timestamp, UTC), so this
+// only refuses a flag that came without a value, which would otherwise be dropped silently.
+function parseTimeFlag(ctx, flag, raw) {
+    if (raw === undefined)
+        return undefined;
+    if (typeof raw !== "string" || raw.trim() === "") {
+        fail(ctx.io, `--${flag} needs a value (an ISO 8601 date or timestamp, for example 2026-08-01)`);
+        return null;
+    }
+    return raw.trim();
+}
 // Flags every command accepts.
 export const GLOBAL_FLAGS = ["json", "help", "token", "profile"];
 // Every flag each command reads, and nothing else. runCli rejects a flag that is
@@ -170,6 +236,7 @@ export const COMMAND_FLAGS = {
     publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "drive-default-access", "callback-url", "no-wait"],
     jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
     projects: ["name", "folder-path", "created-by", "created-after", "created-before", "updated-after", "updated-before", "sort", "direction", "limit", "cursor"],
+    search: ["type", "match", "owner", "updated-after", "updated-before", "sort", "limit"],
     published: [],
     "download-published": ["formats", "concurrency", "output-dir", "no-end-marker", "slugs", "report"],
     "edit-in-descript": ["schema"],
@@ -583,6 +650,59 @@ export const COMMANDS = {
         }
         fail(ctx.io, "Usage: descript projects list|get <id>");
         return 2;
+    },
+    async search(ctx) {
+        // Every positional word is part of the query, so `search quarterly update` needs no quotes.
+        const query = ctx.args.join(" ").trim();
+        if (query === "") {
+            fail(ctx.io, `A search query is required.\n${SEARCH_USAGE}`);
+            return 2;
+        }
+        if (badEnum(ctx, "sort", SEARCH_SORT))
+            return 2;
+        const type = parseEnumList(ctx, "type", ctx.flags["type"], SEARCH_TYPE);
+        if (type === null)
+            return 2;
+        const match = parseEnumList(ctx, "match", ctx.flags["match"], SEARCH_MATCH);
+        if (match === null)
+            return 2;
+        const owner = parseOwners(ctx, ctx.flags["owner"]);
+        if (owner === null)
+            return 2;
+        const updatedAfter = parseTimeFlag(ctx, "updated-after", ctx.flags["updated-after"]);
+        if (updatedAfter === null)
+            return 2;
+        const updatedBefore = parseTimeFlag(ctx, "updated-before", ctx.flags["updated-before"]);
+        if (updatedBefore === null)
+            return 2;
+        const limit = parseLimit(ctx, ctx.flags["limit"]);
+        if (limit === null)
+            return 2;
+        const req = {
+            query,
+            ...(type ? { type: type } : {}),
+            ...(match ? { match: match } : {}),
+            ...(owner ? { owner } : {}),
+            ...(updatedAfter ? { updated_after: updatedAfter } : {}),
+            ...(updatedBefore ? { updated_before: updatedBefore } : {}),
+            ...(typeof ctx.flags["sort"] === "string" ? { sort: ctx.flags["sort"] } : {}),
+            ...(limit ? { limit } : {})
+        };
+        let r;
+        try {
+            r = await client(ctx).search(req);
+        }
+        catch (e) {
+            // The generic 404 hint talks about jobs and projects; for search a 404 means the
+            // endpoint is not enabled for the token's user.
+            if (e instanceof DescriptApiError && e.status === 404) {
+                fail(ctx.io, `${e.message}\nHint: the API returns 404 when the search endpoint is not enabled for the token's user. Nothing is wrong with the query.`, e.body);
+                return 3;
+            }
+            throw e;
+        }
+        emit(ctx.io, formatSearch(r?.results), r ?? { results: [] });
+        return 0;
     },
     async published(ctx) {
         const c = client(ctx);

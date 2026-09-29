@@ -6,9 +6,10 @@ import { getPublishedProjectMetadata } from "./published.js";
 import { postEditInDescriptSchema } from "./editInDescript.js";
 import { listAgentModels } from "./models.js";
 import { exportTranscript } from "./transcript.js";
+import { search } from "./search.js";
 import type {
   ImportRequest, AgentRequest, PublishRequest, ListJobsQuery, ListProjectsQuery, EditInDescriptBody,
-  TranscriptExportRequest
+  TranscriptExportRequest, SearchQuery
 } from "./types.js";
 
 export class DescriptClient {
@@ -29,6 +30,7 @@ export class DescriptClient {
   postEditInDescriptSchema(body: EditInDescriptBody) { return postEditInDescriptSchema(this.http, body); }
   listAgentModels() { return listAgentModels(this.http); }
   exportTranscript(req: TranscriptExportRequest) { return exportTranscript(this.http, req); }
+  search(query: SearchQuery) { return search(this.http, query); }
 }
 
 export { HttpClient } from "./http.js";

@@ -111,6 +111,23 @@ function timecodeFlags(raw) {
     }
     return out;
 }
+// descript_search takes type, match and owner as a JSON array of strings or a
+// comma-separated string, and hands the CLI its comma-separated flag. The CLI
+// validates every element, so this only settles the shape. An empty array or
+// empty string means "not set" and adds no flag; anything else non-empty goes
+// through, so a stray "," is rejected by the CLI rather than ignored.
+function listFlag(tool, arg) {
+    return (raw) => {
+        if (raw === undefined || raw === null)
+            return [];
+        const items = Array.isArray(raw) ? raw : [raw];
+        if (!items.every((v) => typeof v === "string")) {
+            throw new Error(`${tool}: ${arg} must be an array of strings or a comma-separated string`);
+        }
+        const joined = items.join(",");
+        return joined === "" ? [] : [`--${arg}=${joined}`];
+    };
+}
 const STRICT = "Argument names may be snake_case or kebab-case. Unknown arguments are rejected, never ignored.";
 export const TOOLS = [
     { name: "descript_status", description: `Check Descript API auth and status. args: profile?. ${STRICT}`,
@@ -141,6 +158,10 @@ export const TOOLS = [
     { name: "descript_translate", description: `Translate a composition's captions via Underlord and report which NEW composition carries the requested language (creation-time mapping). BILLABLE - spends AI credits (translate captions ~10 plus agent message credits); confirm with the user before calling. args: project_id, composition_id?, language (e.g. "French (Canada)" - regional variants supported), model?, no_wait?. ${STRICT}`,
         argv: build({ tool: "descript_translate", base: ["translate"],
             positionals: [{ name: "project_id", required: true }, { name: "composition_id" }] }) },
+    { name: "descript_search", description: `Search the Drive for projects, media, folders and layout packs. Free and read-only, no confirmation needed. Matches names, and with match=content also transcripts and composition text, across projects, the drive media library and Brand Studio; results are ranked best first. args: query (required, non-empty), type? (array of strings or a comma-separated string of project|video|image|audio|project_folder|media_library_folder|layout_pack; default all), match? (array or comma-separated string of name|content; default both), owner? (array or comma-separated string of user UUIDs), updated_after?, updated_before? (ISO 8601 date or timestamp, UTC), sort?=relevance|newest|oldest (default relevance), limit? (1-100, default 30). Each result carries type, name, url, updated_at and one id (project_id for project and layout_pack, asset_id for video, image and audio, folder_id for project_folder and media_library_folder). ${STRICT}`,
+        argv: build({ tool: "descript_search", base: ["search"],
+            positionals: [{ name: "query", required: true }],
+            special: { type: listFlag("descript_search", "type"), match: listFlag("descript_search", "match"), owner: listFlag("descript_search", "owner") } }) },
 ];
 export const realExecutor = async (argv) => {
     let stdout = "";

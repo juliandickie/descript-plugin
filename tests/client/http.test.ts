@@ -101,3 +101,10 @@ test("requestRaw returns empty bytes for 204 No Content", async () => {
   const r = await http.requestRaw("POST", "/export/transcript", { body: { project_id: "p", format: "txt" } });
   assert.equal(r.bytes.length, 0);
 });
+
+test("an array query value becomes one repeated key per item, and an empty array adds nothing", async () => {
+  const { calls } = installMockFetch([{ status: 200, json: {} }]);
+  const http = new HttpClient({ token: "t" });
+  await http.request("GET", "/search", { query: { query: "q", type: ["project", "audio"], match: [], limit: 5, sort: undefined } });
+  assert.equal(calls[0]!.url, "https://descriptapi.com/v1/search?query=q&type=project&type=audio&limit=5");
+});

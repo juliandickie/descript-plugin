@@ -39,8 +39,15 @@ export class HttpClient {
     async send(method, path, opts, accept) {
         const url = new URL(this.baseUrl + path);
         for (const [k, v] of Object.entries(opts.query ?? {})) {
-            if (v !== undefined)
+            if (v === undefined)
+                continue;
+            if (Array.isArray(v)) {
+                for (const item of v)
+                    url.searchParams.append(k, String(item));
+            }
+            else {
                 url.searchParams.set(k, String(v));
+            }
         }
         const headers = {
             ...(opts.headers ?? {}),

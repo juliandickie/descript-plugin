@@ -8,8 +8,13 @@ export interface HttpClientOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+// One query value: a scalar, or an array that is sent as the same key repeated
+// once per item (`type=project&type=audio`, the OpenAPI "form, explode" style).
+// Undefined values and empty arrays are left out of the URL.
+export type QueryValue = string | number | Array<string | number> | undefined;
+
 export interface RequestOptions {
-  query?: Record<string, string | number | undefined>;
+  query?: Record<string, QueryValue>;
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -62,7 +67,12 @@ export class HttpClient {
   private async send(method: string, path: string, opts: RequestOptions, accept: string): Promise<Response> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) {
-      if (v !== undefined) url.searchParams.set(k, String(v));
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
     }
     const headers: Record<string, string> = {
       ...(opts.headers ?? {}),
