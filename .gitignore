@@ -4,3 +4,7 @@ node_modules/
 
 scripts/smoke/results/*
 !scripts/smoke/results/.gitkeep
+
+# Verbatim Descript help-centre captures (copyrighted) and local-only originals
+docs/help-docs/
+docs/local-archive/

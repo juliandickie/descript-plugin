@@ -1,6 +1,12 @@
 # Session Handoff - 2026-09-30
 
-**In flight.** PR https://github.com/juliandickie/descript-plugin/pull/2 is OPEN and unmerged, on branch `docs/api-capability-audit-2026-09-30` (HEAD `3d70660`, pushed, clean). It carries the capability audit and six v0.8.0 features, all tested (519 of 519) and exercised live. There is no version bump and no tag: the plugin still says 0.7.2 and main is at `c725413` (v0.7.2). The PR is left open on purpose. The outfit marketplace installs this repo straight from main, so merging and tagging here is the release to every installed copy, and the release is Julian's call. To land it, tell the next session "merge and release v0.8.0".
+**Update, later on 2026-09-30.** Julian said "yes release .8 now, commit the untracked notes, and yes to adding Descript's custom MCP server". Done as follows:
+- **v0.8.0 released.** PR #2 was rebase-merged, and main is at `745710b` "chore(release): v0.8.0". Annotated tag `v0.8.0` is pushed and the branch is deleted. A fresh clone of the tag passes 519 of 519 and runs a live search.
+- **Local notes committed** by a docs PR (branch `docs/commit-local-notes`). These are the 45 untracked AGENTS.md files, field reports, plans and specs from the main checkout. Before committing, a full review swapped these for placeholders: a client name and path, a Wistia delivery hash, a podcast guest's name and IDs, and the name of a second Drive. The unredacted originals are kept locally in `docs/local-archive/`, which is gitignored.
+- **`docs/help-docs/` stays local and is now gitignored.** It holds verbatim copies of Descript's help-centre articles, which must not be republished in this public repo.
+- **Custom Descript MCP server added** at user scope as `descript-v2` (https://api.descript.com/v2/mcp). It still needs Julian to sign in via `/mcp`. Its generative tool list has not been inspected yet.
+
+Nothing is in flight beyond Julian's `descript-v2` sign-in. The original end-of-build state follows.
 
 State verified as of 2026-09-30 01:30 AEST, session df44b3d8-8fea-4f6d-85aa-921f2e74d0c5.
 
