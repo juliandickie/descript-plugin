@@ -11,7 +11,7 @@ Reference material, committed on 2026-09-30 at Julian's direction (it was local-
 
 | File | Description |
 |------|-------------|
-| `descript-openapi.json` | The OpenAPI 3 specification for the Descript API. Authoritative source for endpoint shapes, request bodies, response unions. The CLI's `src/client/types.ts` is hand-derived from this. Refreshed 2026-08-27 (adds /agent/models, /export/transcript; see field report of same date). Prior baseline in legacy/. |
+| `descript-openapi.json` | The OpenAPI 3 specification for the Descript API. Authoritative source for endpoint shapes, request bodies, response unions. The CLI's `src/client/types.ts` is hand-derived from this. Refreshed 2026-10-23, still version 1.2 (adds agent `conversation_id`, search `match=visual` and `moment`; see the field report of the same date). Descript changes it without bumping `info.version`, so diff content. Prior baselines in legacy/. |
 
 ## Subdirectories
 

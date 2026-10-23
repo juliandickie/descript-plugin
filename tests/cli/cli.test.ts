@@ -245,6 +245,62 @@ test("agent success line omits the model segment when resolved_model is absent",
   assert.doesNotMatch(out.join(""), /model:/);
 });
 
+const CONV = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+
+test("agent --conversation-id sends conversation_id and prints the conversation for the next turn", async () => {
+  const { calls } = installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u", conversation_id: CONV } },
+    { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "success", agent_response: "Added captions", project_changed: true, ai_credits_used: 5, media_seconds_used: 0, conversation_id: CONV } } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(["agent", "--project-id", "p", "--conversation-id", CONV, "--prompt", "now add captions"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 0);
+  assert.equal(JSON.parse(calls[0]!.body!).conversation_id, CONV);
+  assert.match(out.join(""), new RegExp(`Conversation: ${CONV}`));
+});
+
+test("agent without --conversation-id sends no conversation_id", async () => {
+  const { calls } = installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u" } },
+    { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "success", agent_response: "ok", project_changed: false } } }
+  ]);
+  const code = await runCli(["agent", "--project-id", "p", "--prompt", "x"], { env: { DESCRIPT_API_TOKEN: "t" }, stdout: () => {}, stderr: () => {} });
+  assert.equal(code, 0);
+  assert.equal("conversation_id" in JSON.parse(calls[0]!.body!), false);
+});
+
+test("agent failure still reports the conversation id from the submit response", async () => {
+  installMockFetch([
+    { status: 201, json: { job_id: "j", drive_id: "d", project_id: "p", project_url: "u", conversation_id: CONV } },
+    { status: 200, json: { job_id: "j", job_type: "agent", job_state: "stopped", created_at: "t", drive_id: "d", project_id: "p", project_url: "u",
+        result: { status: "error", error_message: "AI agent failed" } } }
+  ]);
+  const out: string[] = [];
+  const code = await runCli(["agent", "--project-id", "p", "--prompt", "x", "--json"],
+    { env: { DESCRIPT_API_TOKEN: "t" }, stdout: (s) => out.push(s), stderr: (s) => out.push(s) });
+  assert.equal(code, 4);
+  assert.equal(JSON.parse(out.join("")).conversationId, CONV);
+});
+
+test("agent --conversation-id needs a UUID and --project-id, refused before any request", async () => {
+  for (const argv of [
+    ["agent", "--project-id", "p", "--conversation-id", "nope", "--prompt", "x"],
+    ["agent", "--project-name", "New", "--conversation-id", CONV, "--prompt", "x"],
+    ["agent", "--conversation-id", CONV, "--prompt", "x"]
+  ]) {
+    const { calls } = installMockFetch([{ status: 201, json: {} }]);
+    const err: string[] = [];
+    const code = await runCli(argv, { env: { DESCRIPT_API_TOKEN: "t" }, stdout: () => {}, stderr: (s) => err.push(s) });
+    assert.equal(code, 2, argv.join(" "));
+    assert.equal(calls.length, 0, argv.join(" "));
+    assert.match(err.join(""), /--conversation-id/, argv.join(" "));
+    restoreFetch();
+  }
+});
+
 test("batch with a nonexistent manifest exits 2 (usage), not 1", async () => {
   const out: string[] = [];
   const code = await runCli(["batch", "plan", "/no/such/manifest-xyz.json"],

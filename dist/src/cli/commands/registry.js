@@ -60,10 +60,10 @@ const PROJECT_DIRECTION = ["asc", "desc"];
 const TRANSCRIPT_FORMAT = ["txt", "markdown", "html", "rtf", "docx", "srt"];
 const SPEAKER_LABELS = ["off", "changes", "every_paragraph"];
 const SEARCH_TYPE = ["project", "video", "image", "audio", "project_folder", "media_library_folder", "layout_pack"];
-const SEARCH_MATCH = ["name", "content"];
+const SEARCH_MATCH = ["name", "content", "visual"];
 const SEARCH_SORT = ["relevance", "newest", "oldest"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SEARCH_USAGE = "Usage: descript search <query words...> [--type a,b] [--match name,content] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]";
+const SEARCH_USAGE = "Usage: descript search <query words...> [--type a,b] [--match name,content|visual] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100] [--no-thumbnails]";
 // Returns true (and emits a usage error) if the flag is present but not an allowed value.
 function badEnum(ctx, flag, allowed) {
     const v = ctx.flags[flag];
@@ -234,11 +234,11 @@ export const COMMAND_FLAGS = {
     translate: ["language", "model", "no-wait"],
     config: ["editor"],
     import: ["url", "file", "media", "name", "folder", "language", "project-id", "workspace", "compositions", "content-type", "team-access", "callback-url", "no-wait", "library", "folder-id", "composition-id", "update-compositions"],
-    agent: ["prompt", "project-id", "project-name", "composition-id", "model", "team-access", "callback-url", "no-wait"],
+    agent: ["prompt", "project-id", "project-name", "composition-id", "model", "conversation-id", "team-access", "callback-url", "no-wait"],
     publish: ["project-id", "composition-id", "media-type", "resolution", "access-level", "drive-default-access", "callback-url", "no-wait"],
     jobs: ["project-id", "type", "created-after", "created-before", "limit", "cursor"],
     projects: ["name", "folder-path", "created-by", "created-after", "created-before", "updated-after", "updated-before", "sort", "direction", "limit", "cursor"],
-    search: ["type", "match", "owner", "updated-after", "updated-before", "sort", "limit"],
+    search: ["type", "match", "owner", "updated-after", "updated-before", "sort", "limit", "no-thumbnails"],
     timeline: ["format", "out", "markers", "no-markers", "track-per-file", "source-frame-rate", "strip-spaces", "callback-url", "no-wait"],
     published: [],
     "download-published": ["formats", "concurrency", "output-dir", "no-end-marker", "slugs", "report"],
@@ -650,12 +650,25 @@ export const COMMANDS = {
         }
         if (badEnum(ctx, "team-access", TEAM_ACCESS))
             return 2;
+        // A follow-up turn. The API ties a conversation to one project, so it needs --project-id.
+        const conversationId = ctx.flags["conversation-id"];
+        if (conversationId !== undefined) {
+            if (typeof conversationId !== "string" || !UUID_PATTERN.test(conversationId)) {
+                fail(ctx.io, `--conversation-id must be the conversation UUID from an earlier agent run (got "${String(conversationId)}")`);
+                return 2;
+            }
+            if (typeof ctx.flags["project-id"] !== "string") {
+                fail(ctx.io, "--conversation-id needs --project-id, the project that conversation belongs to");
+                return 2;
+            }
+        }
         const req = {
             project_id: typeof ctx.flags["project-id"] === "string" ? ctx.flags["project-id"] : undefined,
             project_name: typeof ctx.flags["project-name"] === "string" ? ctx.flags["project-name"] : undefined,
             composition_id: typeof ctx.flags["composition-id"] === "string" ? ctx.flags["composition-id"] : undefined,
             model: typeof ctx.flags.model === "string" ? ctx.flags.model : undefined,
             prompt,
+            ...(typeof conversationId === "string" ? { conversation_id: conversationId } : {}),
             ...(typeof ctx.flags["callback-url"] === "string" ? { callback_url: ctx.flags["callback-url"] } : {}),
             ...(typeof ctx.flags["team-access"] === "string" ? { team_access: ctx.flags["team-access"] } : {})
         };
@@ -665,8 +678,9 @@ export const COMMANDS = {
             return 0;
         }
         const out = await editAndWait(c, req, pollOptions(ctx));
-        emit(ctx.io, out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
-            : `Agent failed: ${out.error}`, out);
+        emit(ctx.io, (out.ok ? `Agent: ${out.agentResponse} (credits: ${out.aiCreditsUsed ?? 0}, seconds: ${out.mediaSecondsUsed ?? 0}${out.resolvedModel ? `, model: ${out.resolvedModel}` : ""})`
+            : `Agent failed: ${out.error}`) +
+            (out.conversationId ? `\nConversation: ${out.conversationId} (pass --conversation-id to follow up)` : ""), out);
         return out.ok ? 0 : 4;
     },
     async publish(ctx) {
@@ -823,6 +837,16 @@ export const COMMANDS = {
         const match = parseEnumList(ctx, "match", ctx.flags["match"], SEARCH_MATCH);
         if (match === null)
             return 2;
+        if (match?.includes("visual") && match.length > 1) {
+            fail(ctx.io, "--match visual cannot be combined with name or content. Run a separate visual search.");
+            return 2;
+        }
+        // A switch: parseArgv would read `--no-thumbnails <word>` as a value and swallow a query word.
+        const noThumbnails = ctx.flags["no-thumbnails"];
+        if (noThumbnails !== undefined && noThumbnails !== true) {
+            fail(ctx.io, `--no-thumbnails is a switch and takes no value (got "${String(noThumbnails)}"). Put it after the query words.\n${SEARCH_USAGE}`);
+            return 2;
+        }
         const owner = parseOwners(ctx, ctx.flags["owner"]);
         if (owner === null)
             return 2;
@@ -856,9 +880,19 @@ export const COMMANDS = {
                 fail(ctx.io, `${e.message}\nHint: the API returns 404 when the search endpoint is not enabled for the token's user. Nothing is wrong with the query.`, e.body);
                 return 3;
             }
+            if (e instanceof DescriptApiError && e.status === 403 && match?.includes("visual")) {
+                fail(ctx.io, `${e.message}\nHint: visual search needs a Drive on Descript's Enterprise plan. Search by name or --match content instead.`, e.body);
+                return 3;
+            }
             throw e;
         }
-        emit(ctx.io, formatSearch(r?.results), r ?? { results: [] });
+        // thumbnail_url embeds a 72-hour signed link to the whole source file, so callers that
+        // paste output into shared places (the MCP tool) can leave it out.
+        const data = r ?? { results: [] };
+        const shown = noThumbnails
+            ? { ...data, results: (data.results ?? []).map((res) => { const { thumbnail_url: _drop, ...rest } = res; return rest; }) }
+            : data;
+        emit(ctx.io, formatSearch(r?.results), shown);
         return 0;
     },
     async timeline(ctx) {

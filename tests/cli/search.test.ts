@@ -78,6 +78,20 @@ test("search --json prints the raw API response untouched", async () => {
   assert.deepEqual(JSON.parse(r.stdout), body);
 });
 
+test("search --json --no-thumbnails drops thumbnail_url and keeps every other field", async () => {
+  const r = await run(["search", "quarterly", "--json", "--no-thumbnails"], [{ status: 200, json: { results: [VIDEO, PROJECT] } }]);
+  assert.equal(r.code, 0, r.stderr);
+  const { thumbnail_url: _t, ...videoRest } = VIDEO;
+  assert.deepEqual(JSON.parse(r.stdout), { results: [videoRest, PROJECT] });
+});
+
+test("search human output shows the matched time range of a visual video match", async () => {
+  const moment = { ...VIDEO, location: "project", project_id: PROJECT.project_id, moment: { start_time_sec: 12, end_time_sec: 18.46 } };
+  const r = await run(["search", "car", "--match", "visual"], [{ status: 200, json: { results: [moment] } }]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /\(project, 185s, match 12\.0-18\.5s\)/);
+});
+
 test("search --json with no results prints the empty results object", async () => {
   const r = await run(["search", "zzz", "--json"], [{ status: 200, json: { results: [] } }]);
   assert.deepEqual(JSON.parse(r.stdout), { results: [] });
@@ -268,6 +282,28 @@ test("search needs no token to report a usage error", async () => {
   assert.match(stderr, /Usage: descript search/);
 });
 
+test("search rejects --match visual combined with name or content, with no API call", async () => {
+  for (const m of ["visual,name", "content,visual"]) {
+    const r = await run(["search", "q", "--match", m]);
+    assert.equal(r.code, 2, m);
+    assert.equal(r.calls.length, 0, m);
+    assert.match(r.stderr, /visual cannot be combined/, m);
+  }
+});
+
+test("search sends --match visual on its own", async () => {
+  const r = await run(["search", "red", "car", "--match", "visual"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(params(r).getAll("match"), ["visual"]);
+});
+
+test("search refuses --no-thumbnails given a value, so it never swallows a query word", async () => {
+  const r = await run(["search", "q", "--no-thumbnails", "crowns"]);
+  assert.equal(r.code, 2);
+  assert.equal(r.calls.length, 0);
+  assert.match(r.stderr, /--no-thumbnails is a switch/);
+});
+
 // ---------------------------------------------------------------------------
 // API errors
 // ---------------------------------------------------------------------------
@@ -284,6 +320,19 @@ test("search 404 says search is not enabled for the token's user, not that a job
   assert.match(r.stderr, /Search is not enabled/);
   assert.match(r.stderr, /not enabled for/i);
   assert.doesNotMatch(r.stderr, /job or project was not found/);
+});
+
+test("search 403 on a visual search explains it needs an Enterprise drive", async () => {
+  const r = await run(["search", "q", "--match", "visual"], [{ status: 403, json: { error: "Forbidden", message: "Visual search is not available for this drive" } }]);
+  assert.equal(r.code, 3);
+  assert.match(r.stderr, /Visual search is not available/);
+  assert.match(r.stderr, /Enterprise/);
+});
+
+test("search 403 on a non-visual search keeps the generic error", async () => {
+  const r = await run(["search", "q"], [{ status: 403, json: { error: "Forbidden", message: "nope" } }]);
+  assert.equal(r.code, 3);
+  assert.doesNotMatch(r.stderr, /Enterprise/);
 });
 
 // ---------------------------------------------------------------------------

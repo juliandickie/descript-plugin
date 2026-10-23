@@ -6,7 +6,7 @@ Commands:
   status                         Check API auth and service status
   config set|list|edit           Manage API token profiles (edit opens the file in your editor)
   import --url|--file|--media    Import media (--folder, --language, --project-id to add into existing project, --composition-id <cid> to append the import to one of its compositions (with --url or --file), --update-compositions <json> (with --media), --library [--folder-id <uuid>] for the shared drive media library instead of a project, --media <json>, --compositions <json>, --workspace <name> (Personal|General|custom, new projects only))
-  agent --prompt [...]           Run an Underlord agent edit (--model <name>; see model list below)
+  agent --prompt [...]           Run an Underlord agent edit (--model <name>; see model list below; --conversation-id <uuid> with --project-id continues an earlier run, each turn bills)
   models                         List available Underlord models and aliases (live from the API)
   transcript <pid> [cid] [...]   Export a transcript file, free and instant, no publish (--format txt|markdown|html|rtf|docx|srt, --out <path>, --speaker-labels off|changes|every_paragraph, --markers, --timecodes-every/-offset/-on-paragraphs/-on-markers/-on-speakers)
   timeline <pid> [cid] [...]     Export a timeline file for another editor and save it, free, no share page (--format edl|sesx|fcp|premiere|davinci_resolve|aaf: Reaper or Samplitude, Audition, Final Cut, Premiere, Resolve, Pro Tools or Logic; --out <file|folder>, --markers|--no-markers, --track-per-file (not fcp), --source-frame-rate (premiere, davinci_resolve), --strip-spaces (aaf), --callback-url <u>; the file lands in the current folder as <pid>-<name> without --out)
@@ -14,7 +14,7 @@ Commands:
   publish --project-id [...]     Publish a composition (--access-level private|drive|unlisted|public, default private; --drive-default-access uses the drive's configured default instead)
   jobs list|get <id>|cancel <id> Inspect or cancel jobs (list --project-id, --type, --created-after, --created-before, --limit 1-100, --cursor)
   projects list|get <id>         List or fetch projects (list --name, --folder-path, --created-by, --created-after, --created-before, --updated-after, --updated-before, --sort, --direction, --limit 1-100, --cursor)
-  search <query...> [...]        Search the Drive for projects, media, folders and layout packs by name or transcript text, free and read-only (--type a,b of project|video|image|audio|project_folder|media_library_folder|layout_pack, --match name,content, --owner <uuid,...>, --updated-after, --updated-before, --sort relevance|newest|oldest, --limit 1-100; a query needs no quotes)
+  search <query...> [...]        Search the Drive for projects, media, folders and layout packs by name or transcript text, free and read-only (--type a,b of project|video|image|audio|project_folder|media_library_folder|layout_pack, --match name,content or --match visual alone (Enterprise drives), --owner <uuid,...>, --updated-after, --updated-before, --sort relevance|newest|oldest, --limit 1-100, --no-thumbnails drops the signed thumbnail_url from --json; a query needs no quotes)
   published <slug>               Get published project metadata
   download-published <slug>      Download mp4/srt/md from a published slug
   export <pid> [cid] [...]       Publish + download mp4/srt/md (single, project-wide, or --projects; --resume <path> replays a prior export-report.json)

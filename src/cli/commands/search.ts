@@ -20,12 +20,18 @@ function idOf(r: SearchResult): string {
 }
 
 // Media results also say where the file lives and how long it is,
-// for example "(media_library, 185s)". Images carry no duration.
+// for example "(media_library, 185s)". Images carry no duration. A visual match
+// adds its time range, "(project, 185s, match 12.0-18.5s)".
 function mediaNote(r: SearchResult): string {
   if (r.type !== "video" && r.type !== "image" && r.type !== "audio") return "";
   const parts: string[] = [];
   if (typeof r.location === "string") parts.push(r.location);
   if (typeof r.duration === "number" && Number.isFinite(r.duration)) parts.push(`${Math.round(r.duration)}s`);
+  // Visual matches (Enterprise drives) say where in the video the match is.
+  const m = r.moment;
+  if (m && typeof m.start_time_sec === "number" && typeof m.end_time_sec === "number") {
+    parts.push(`match ${m.start_time_sec.toFixed(1)}-${m.end_time_sec.toFixed(1)}s`);
+  }
   return parts.length > 0 ? `(${parts.join(", ")})` : "";
 }
 

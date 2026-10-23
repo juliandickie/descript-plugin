@@ -1,6 +1,6 @@
 ---
 name: descript-search
-description: Search a Descript Drive for projects, media files, folders and layout packs by name, or by words spoken in a transcript. Free, read-only, creates nothing and spends no credits. Use when the user wants to find a Descript project by name, find which project contains a phrase someone said, find video, audio or image files across projects and the media library, or look up a project folder or media library folder id.
+description: Search a Descript Drive for projects, media files, folders and layout packs by name, by words spoken in a transcript, or (Enterprise drives) by what appears on screen. Free, read-only, creates nothing and spends no credits. Use when the user wants to find a Descript project by name, find which project contains a phrase someone said, find video, audio or image files across projects and the media library, or look up a project folder or media library folder id.
 ---
 
 # Descript Drive Search
@@ -9,25 +9,27 @@ description: Search a Descript Drive for projects, media files, folders and layo
 - "Find the project called X", "which project has the lesson where I say Y", "find the standup recording", "what is the folder id for B-roll"
 - Find a project by name when the user has no id: search first, then use the returned `project_id` with transcript, edit, publish or export. (`descript projects list --name` also filters by name. Use search when the user remembers a spoken phrase, a media file or a folder rather than a project name, or wants projects, files and folders in one ranked list.)
 - Find which project contains a phrase: `--match content` searches transcripts and composition text.
+- Find footage by what is on screen: `--match visual` (Enterprise drives only, on its own). Video hits then carry `moment`, the matched time range.
 - Find media files by name across projects, the drive media library and Brand Studio: `--type video`, `audio` or `image`.
 - Find folder ids: `--type project_folder` or `--type media_library_folder`. Search is the only public source of folder ids. The `folder_id` of a `media_library_folder` result is the id `descript import --library --folder-id <id>` takes.
 - Search by words or by the full file name. Live on 2026-09-30, `descript-plugin-qa-delete-me.wav` and `delete me` both found a file, but the hyphenated fragment `descript-plugin-qa-delete-me` without the extension found nothing.
 - NOT for: listing every project (use `descript projects list`, it pages), or reading a transcript (use descript-transcript once you have the `project_id`).
 
 ## Instructions
-- Command: `descript search <query words...> [--type a,b] [--match name,content] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100]`
+- Command: `descript search <query words...> [--type a,b] [--match name,content|visual] [--owner uuid,uuid] [--updated-after <date>] [--updated-before <date>] [--sort relevance|newest|oldest] [--limit 1-100] [--no-thumbnails]`
 - Every word after `search` is part of the query, so quotes are optional: `descript search quarterly update` searches for "quarterly update". The query must not be empty.
 - List flags take comma-separated values with no spaces: `--type project,audio`. Never write `--type project audio`, the second word would be read as part of the query. Put `--json` after the query words.
 - `--type` values: project, video, image, audio, project_folder, media_library_folder, layout_pack. Default is all types.
-- `--match` values: `name` (project, file, folder and layout pack names) and `content` (transcripts and composition text). Default is both.
+- `--match` values: `name` (project, file, folder and layout pack names), `content` (transcripts and composition text) and `visual` (what appears in videos and images). Default is name and content. `visual` needs a Drive on Descript's Enterprise plan (otherwise 403, which the CLI explains) and cannot be combined with another kind (usage error, no request). The iDD Drive is not Enterprise (403 on 2026-10-23).
 - `--owner` takes user UUIDs. They come from the `owner.id` of earlier results in `--json` output, there is no lookup by name.
 - `--updated-after` and `--updated-before` take an ISO 8601 date (`2026-08-01`, the start or end of that UTC day) or a timestamp (`2026-08-01T09:30:00Z`). A value with no timezone is read as UTC. They filter on last modified, not creation.
 - `--sort` is `relevance` (default, best match first), `newest` or `oldest` (by last modified). `--limit` is 1-100, default 30.
-- Output is one line per result, best match first: `<type>  <name>  <id>  <url>`. The id is `project_id` for project and layout_pack, `asset_id` for video, image and audio, `folder_id` for the two folder types. Media lines end with `(location, seconds)`, where location is media_library, project or brand_studio. The last line is the count, or `No results`.
-- Add `--json` for the full records: `owner`, `updated_at`, `thumbnail_url`, and for media inside a project the `project_id` (or the `brand_studio_id` for Brand Studio files).
+- Output is one line per result, best match first: `<type>  <name>  <id>  <url>`. The id is `project_id` for project and layout_pack, `asset_id` for video, image and audio, `folder_id` for the two folder types. Media lines end with `(location, seconds)`, where location is media_library, project or brand_studio, plus `match <start>-<end>s` for a visual video match. The last line is the count, or `No results`.
+- Add `--json` for the full records: `owner`, `updated_at`, `thumbnail_url`, `moment` on visual matches, and for media inside a project the `project_id` (or the `brand_studio_id` for Brand Studio files). Add `--no-thumbnails` to leave `thumbnail_url` out.
+- Links. `url` opens the item in Descript: a project opens at `https://web.descript.com/<project_id>`, a file inside a project opens that project with the file highlighted (`?file=<asset_id>`), and a media library file opens the library at that item.
 - A content match returns the project, not the matching text. To find the moment, run descript-transcript on the `project_id` and read or search the text.
 - Invalid enum values, a non-UUID owner, a bad limit and an empty query are usage errors (exit 2) and no request is sent. `No results` is not an error, so try a shorter query or fewer filters. A 404 means the search endpoint is not enabled for the token's user.
-- MCP tool `descript_search` takes the same options (`query`, `type`, `match`, `owner`, `updated_after`, `updated_before`, `sort`, `limit`). `type`, `match` and `owner` accept a JSON array of strings or a comma-separated string. Unknown arguments are rejected, never ignored.
+- MCP tool `descript_search` takes the same options (`query`, `type`, `match`, `owner`, `updated_after`, `updated_before`, `sort`, `limit`). `type`, `match` and `owner` accept a JSON array of strings or a comma-separated string. Unknown arguments are rejected, never ignored. The MCP tool leaves `thumbnail_url` out unless called with `thumbnails: true`.
 
 ## Examples
 - Find a project by name: `descript search quarterly update`
@@ -38,4 +40,4 @@ description: Search a Descript Drive for projects, media files, folders and layo
 
 ## Cost and Safety
 - Free. No AI credits, no media seconds, no share URL, no job created. Read-only against the Drive. No confirmation needed.
-- Thumbnail URLs in `--json` output are signed and time-limited, treat them as temporary.
+- A `thumbnail_url` is not just a preview. It embeds a signed link to the whole original file, valid 72 hours, that downloads without a Descript login (verified 2026-10-23). Treat it like a share link: never paste it into a shared doc, chat or ticket. Ask for thumbnails only when the user needs previews.
