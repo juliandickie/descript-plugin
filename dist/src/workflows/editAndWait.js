@@ -6,7 +6,9 @@ export async function editAndWait(client, req, poll = {}) {
         throw new Error(`Unexpected job_type "${final.job_type}" for agent job ${submit.job_id}`);
     }
     const result = final.result;
-    const base = { jobId: submit.job_id, projectId: submit.project_id, projectUrl: submit.project_url };
+    // The submit response also carries conversation_id, so a failed turn still reports it.
+    const conversationId = result?.conversation_id ?? submit.conversation_id;
+    const base = { jobId: submit.job_id, projectId: submit.project_id, projectUrl: submit.project_url, ...(conversationId ? { conversationId } : {}) };
     if (!result || result.status === "error") {
         return { ...base, ok: false, error: result?.status === "error" ? result.error_message : "Job stopped without a result" };
     }
@@ -16,7 +18,6 @@ export async function editAndWait(client, req, poll = {}) {
         projectChanged: result.project_changed,
         aiCreditsUsed: result.ai_credits_used,
         mediaSecondsUsed: result.media_seconds_used,
-        resolvedModel: result.resolved_model,
-        conversationId: result.conversation_id
+        resolvedModel: result.resolved_model
     };
 }

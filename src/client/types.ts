@@ -83,6 +83,8 @@ export interface AgentRequest {
   composition_id?: string;
   model?: string;
   prompt: string;
+  /** Continues an earlier conversation on the same project. Requires project_id. */
+  conversation_id?: string;
   team_access?: "edit" | "comment" | "view" | "none";
   callback_url?: string;
 }
@@ -321,14 +323,15 @@ export interface AgentModelsResponse {
 
 // GET /search (spec 1.2, live-verified 2026-09-30). Free and read-only.
 export type SearchType = "project" | "video" | "image" | "audio" | "project_folder" | "media_library_folder" | "layout_pack";
-export type SearchMatch = "name" | "content";
+export type SearchMatch = "name" | "content" | "visual";
 export type SearchSort = "relevance" | "newest" | "oldest";
 export interface SearchQuery {
   /** Search term, must be non-empty. */
   query: string;
   /** Result types to search; each item is sent as its own `type` key. Omit for all types. */
   type?: SearchType[];
-  /** `name` matches names, `content` matches transcripts and composition text. Omit for both. */
+  /** `name` matches names, `content` matches transcripts and composition text, `visual` what appears
+   *  in videos and images (Enterprise drives only, never combined with another kind). Omit for name and content. */
   match?: SearchMatch[];
   /** User UUIDs; each item is sent as its own `owner` key. Omit for every owner. */
   owner?: string[];
@@ -375,6 +378,8 @@ export interface MediaSearchResult extends SearchResultBase {
   thumbnail_url?: string;
   /** Seconds. Omitted for images and files with no duration. */
   duration?: number;
+  /** Matched time range, in seconds. Only on visual video matches (match=visual, Enterprise drives). */
+  moment?: { start_time_sec?: number; end_time_sec?: number };
 }
 export interface ProjectFolderSearchResult extends SearchResultBase {
   type: "project_folder";

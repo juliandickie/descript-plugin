@@ -5,7 +5,7 @@ description: Run an Underlord agent edit on a Descript project. Use when the use
 
 # Descript Agent Edit
 
-Run a one-shot Underlord agent edit.
+Run an Underlord agent edit. One complete prompt is the cheapest path; a follow-up turn can continue the same conversation with `--conversation-id`.
 
 ## Three affordances worth surfacing up front
 
@@ -23,17 +23,17 @@ Run a one-shot Underlord agent edit.
 
 ## Instructions
 
-1. The Descript API is one-shot. Frame the entire instruction in a single prompt with all needed detail. There is no follow-up conversation.
+1. Frame the whole instruction in one prompt with all needed detail. Each turn bills, so one complete prompt is cheaper than a back-and-forth.
 
 2. This SPENDS AI credits and media seconds. Before submitting, state the project, the prompt, and (if relevant) the model, then get explicit user confirmation.
 
-3. Run - `descript agent --project-id <ID> --prompt "<one-shot instruction>" --json`. The agent command also accepts `--composition-id` (target a specific composition; omit to target the whole project), `--model`, and `--project-name` (create a new project from the prompt instead of editing an existing one). Add `--no-wait` to submit without polling (headless). For headless pipelines, add `--callback-url <https url>` (Descript POSTs completion) and `--team-access` for new projects created via `--project-name`.
+3. Run - `descript agent --project-id <ID> --prompt "<one-shot instruction>" --json`. The agent command also accepts `--composition-id` (target a specific composition; omit to target the whole project), `--model`, and `--project-name` (create a new project from the prompt instead of editing an existing one). Add `--conversation-id <uuid>` (with `--project-id`) to continue an earlier run; see step 6. Add `--no-wait` to submit without polling (headless). For headless pipelines, add `--callback-url <https url>` (Descript POSTs completion) and `--team-access` for new projects created via `--project-name`.
 
-4. Report `agentResponse`, `aiCreditsUsed`, and `mediaSecondsUsed` from the result so cost is visible.
+4. Report `agentResponse`, `aiCreditsUsed`, and `mediaSecondsUsed` from the result so cost is visible. Keep `conversationId` from the result (the human output prints it as `Conversation: <uuid>`) in case a follow-up is needed.
 
 5. On failure, surface the error and do not silently retry (a retry re-spends credits).
 
-6. Write prompts SELF-CONTAINED. The API cannot continue agent conversations (`conversation_id` is response-only, absent from the request schema), and a clarifying question costs a full billable round (observed 5.4 credits for a question alone). State preconditions in the prompt (for example, "Add captions if there are none, then...").
+6. Follow-ups. Since October 2026 the API continues a conversation: pass the earlier run's `conversationId` as `--conversation-id`, with the same `--project-id` (a conversation belongs to one project; another project returns 400, an unknown id 404). Use it when Underlord asked a clarifying question or the user wants to refine the last result, so the agent keeps the earlier turns. Every follow-up is a new billable job, so run the same confirmation as step 2 for each turn (a clarifying question alone has cost 5.4 credits). Still state preconditions in the first prompt (for example, "Add captions if there are none, then...") to avoid needing a follow-up.
 
 7. Success output now reports the resolved model. For plain translation requests, route to descript-translate instead, which also captures the language mapping.
 

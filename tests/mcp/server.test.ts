@@ -390,35 +390,52 @@ const OWNER_B = "9f36ee32-5a2c-47e7-b1a3-94991d3e3ddb";
 test("descript_search turns array type, match and owner arguments into the CLI's comma-separated flags", () => {
   assert.deepEqual(
     argvOf("descript_search", { query: "quarterly update", type: ["project", "audio"], match: ["name", "content"], owner: [OWNER_A, OWNER_B] }),
-    ["search", "quarterly update", "--type=project,audio", "--match=name,content", `--owner=${OWNER_A},${OWNER_B}`, "--json"]
+    ["search", "quarterly update", "--type=project,audio", "--match=name,content", `--owner=${OWNER_A},${OWNER_B}`, "--no-thumbnails", "--json"]
   );
 });
 
 test("descript_search passes comma-separated string type, match and owner arguments through unchanged", () => {
   assert.deepEqual(
     argvOf("descript_search", { query: "crowns", type: "project,audio", match: "content", owner: `${OWNER_A},${OWNER_B}` }),
-    ["search", "crowns", "--type=project,audio", "--match=content", `--owner=${OWNER_A},${OWNER_B}`, "--json"]
+    ["search", "crowns", "--type=project,audio", "--match=content", `--owner=${OWNER_A},${OWNER_B}`, "--no-thumbnails", "--json"]
   );
 });
 
 test("descript_search accepts a single-element array and a single string value alike", () => {
-  const want = ["search", "q", "--type=project_folder", "--json"];
+  const want = ["search", "q", "--type=project_folder", "--no-thumbnails", "--json"];
   assert.deepEqual(argvOf("descript_search", { query: "q", type: ["project_folder"] }), want);
   assert.deepEqual(argvOf("descript_search", { query: "q", type: "project_folder" }), want);
 });
 
 test("descript_search leaves out empty, null and undefined list arguments", () => {
-  assert.deepEqual(argvOf("descript_search", { query: "q", type: [], match: "", owner: null, sort: undefined }), ["search", "q", "--json"]);
+  assert.deepEqual(argvOf("descript_search", { query: "q", type: [], match: "", owner: null, sort: undefined }), ["search", "q", "--no-thumbnails", "--json"]);
 });
 
 test("descript_search forwards the scalar filters, in snake_case or kebab-case", () => {
-  const want = ["search", "q", "--updated-after=2026-08-01", "--updated-before=2026-08-31T23:59:59Z", "--sort=newest", "--limit=10", "--json"];
+  const want = ["search", "q", "--updated-after=2026-08-01", "--updated-before=2026-08-31T23:59:59Z", "--sort=newest", "--limit=10", "--no-thumbnails", "--json"];
   assert.deepEqual(argvOf("descript_search", { query: "q", updated_after: "2026-08-01", updated_before: "2026-08-31T23:59:59Z", sort: "newest", limit: 10 }), want);
   assert.deepEqual(argvOf("descript_search", { query: "q", "updated-after": "2026-08-01", "updated-before": "2026-08-31T23:59:59Z", sort: "newest", limit: 10 }), want);
 });
 
 test("descript_search keeps a multi-word query as one argument", () => {
-  assert.deepEqual(argvOf("descript_search", { query: "how to prep a crown" }), ["search", "how to prep a crown", "--json"]);
+  assert.deepEqual(argvOf("descript_search", { query: "how to prep a crown" }), ["search", "how to prep a crown", "--no-thumbnails", "--json"]);
+});
+
+test("descript_search leaves thumbnail_url out unless thumbnails is true, and refuses a non-boolean", () => {
+  assert.deepEqual(argvOf("descript_search", { query: "q", thumbnails: true }), ["search", "q", "--json"]);
+  assert.deepEqual(argvOf("descript_search", { query: "q", thumbnails: false }), ["search", "q", "--no-thumbnails", "--json"]);
+  assert.throws(() => argvOf("descript_search", { query: "q", thumbnails: "yes" }), /thumbnails must be true or false/);
+});
+
+test("descript_search passes match=visual through for the CLI to validate", () => {
+  assert.deepEqual(argvOf("descript_search", { query: "a red car", match: ["visual"] }), ["search", "a red car", "--match=visual", "--no-thumbnails", "--json"]);
+});
+
+test("descript_agent forwards conversation_id as --conversation-id", () => {
+  assert.deepEqual(
+    argvOf("descript_agent", { project_id: "p1", prompt: "now add captions", conversation_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" }),
+    ["agent", "--project-id=p1", "--prompt=now add captions", "--conversation-id=a1b2c3d4-e5f6-7890-abcd-ef1234567890", "--json"]
+  );
 });
 
 test("descript_search rejects a missing query, a flag-looking query and an unknown argument", () => {

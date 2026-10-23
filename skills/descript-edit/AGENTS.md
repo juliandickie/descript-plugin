@@ -5,7 +5,7 @@
 
 ## Purpose
 
-Run a one-shot Underlord agent edit on a Descript project. Cost-bearing (spends AI credits and media seconds). Model-invocable WITHOUT `disable-model-invocation`, gated instead by a mandatory in-skill confirmation step so Claude can run edits conversationally. Backs `descript agent`.
+Run an Underlord agent edit on a Descript project, optionally continuing an earlier conversation (`--conversation-id`). Cost-bearing (spends AI credits and media seconds). Model-invocable WITHOUT `disable-model-invocation`, gated instead by a mandatory in-skill confirmation step so Claude can run edits conversationally. Backs `descript agent`.
 
 ## Key Files
 
@@ -21,7 +21,7 @@ Run a one-shot Underlord agent edit on a Descript project. Cost-bearing (spends 
 
 - Do NOT add `disable-model-invocation` to this skill's frontmatter. The whole point of the in-skill confirmation pattern is that Claude can run edits conversationally without operator gating. See root `AGENTS.md` cost-gate rules.
 
-- The Descript agent API is one-shot. No multi-turn refinement. Frame the whole instruction in a single `--prompt "..."` value with all needed detail.
+- Prefer one complete `--prompt "..."`. Multi-turn works since October 2026 (`--conversation-id` with `--project-id`), but every turn bills and needs its own confirmation.
 
 - `--project-id` edits an existing project. `--project-name` creates a new project from the prompt alone (Underlord generates the source). Mutually exclusive in practice.
 

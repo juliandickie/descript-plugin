@@ -19,9 +19,9 @@ export interface TranslateOutcome {
 // Language-to-composition mapping is NOT recoverable after the fact (no
 // metadata field exists - verified 2026-08-28), so this captures it at
 // creation time: snapshot compositions, run the agent translation, diff.
-// The prompt is self-contained because the API cannot continue agent
-// conversations (conversation_id is response-only) - a clarifying question
-// costs a full billable round.
+// The prompt is self-contained and the run is single-turn: a follow-up with
+// conversation_id would be a second billable round, and the composition diff
+// only brackets one job.
 export async function translateAndMap(client: DescriptClient, opts: {
   projectId: string;
   compositionId?: string;
